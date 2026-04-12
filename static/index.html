@@ -73,8 +73,9 @@
   .ms-count{display:inline-block;background:var(--cu);color:#000;border-radius:10px;font-size:9px;font-weight:700;padding:1px 5px;margin-left:3px}
 
   /* KPIs */
-  .kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+  .kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px}
   .kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:visible;min-width:0}
+  .kv{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;line-height:1;word-break:break-word;white-space:normal}
   .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
   .kpi.k1::before{background:var(--cu)}.kpi.k2::before{background:var(--int)}
   .kpi.k3::before{background:var(--bgo)}.kpi.k4::before{background:var(--warn)}
@@ -290,8 +291,9 @@
     <!-- Tabela de timepoints -->
     <div class="sec">Detalhe por Timepoint</div>
     <div class="tc">
-      <div class="th2">
+      <div class="th2" style="align-items:center;gap:10px;">
         <div class="tt">Todos os Timepoints</div>
+        <button class="btn btn-s" onclick="exportCapacityToExcel()">📄 Excel</button>
         <div class="tn" id="capTcount"></div>
       </div>
       <div class="table-scroll" id="capTbl">
@@ -381,6 +383,11 @@
         <div class="cw"><canvas id="artifactChart"></canvas></div>
       </div>
       <div class="cc">
+        <div class="ct">Tipo de Operação</div>
+        <div class="cs">Distribuição por evento</div>
+        <div class="cw"><canvas id="operationChart"></canvas></div>
+      </div>
+      <div class="cc">
         <div class="ct">Falhas por Operação</div>
         <div class="cs">Onde estão a ocorrer erros</div>
         <div class="rank-scroll" id="rankFails"><div class="empty" style="padding:14px">—</div></div>
@@ -418,8 +425,9 @@
 
     <div class="sec">Log Detalhado</div>
     <div class="tc">
-      <div class="th2">
+      <div class="th2" style="align-items:center;gap:10px;">
         <div class="tt">Todos os Eventos</div>
+        <button class="btn btn-s" onclick="exportActivityToExcel()">📄 Excel</button>
         <div class="tn" id="tcount"></div>
       </div>
       <div class="table-scroll" id="tbl">
@@ -524,8 +532,9 @@
   <!-- Table -->
   <div class="sec">Detalhe por Dataset</div>
   <div class="tc">
-    <div class="th2">
+    <div class="th2" style="align-items:center;gap:10px;">
       <div class="tt">Todos os Datasets</div>
+      <button class="btn btn-s" onclick="exportRefreshesToExcel()">📄 Excel</button>
       <div class="tn" id="refTcount"></div>
     </div>
     <div class="table-scroll" id="refTbl">
@@ -538,12 +547,15 @@
 <!-- Drill-down panel -->
 <div class="drill-overlay" id="drillOverlay" onclick="closeDrill(event)">
   <div class="drill-panel">
-    <div class="drill-header">
+    <div class="drill-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
       <div>
         <div class="drill-title" id="drillTitle">Detalhe do Timepoint</div>
         <div class="drill-tp" id="drillTp"></div>
       </div>
-      <button class="drill-close" onclick="closeDrillPanel()">✕</button>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="btn btn-s" onclick="exportDrillToExcel()">📄 Excel</button>
+        <button class="drill-close" onclick="closeDrillPanel()">✕</button>
+      </div>
     </div>
     <div class="drill-tabs">
       <button class="drill-tab active" id="dtab-int" onclick="switchDrillTab('interactive')">⚡ Interactive</button>
@@ -574,10 +586,12 @@
 </div><!-- /wrap -->
 
 <script>
-const P='http://localhost:8765';
-let timeChart,methodChart,artifactChart,hourChart;
+const P = window.location.origin;
+let timeChart,methodChart,artifactChart,operationChart,hourChart;
 let cuChart,skuChart,breakdownChart;
-let _allEvents=[],_rawActivityEvents=[],_capData=[];
+let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySummary=null,_capData=[];
+let _currentActivityRows=[];
+let _currentRefRows=[];
 let _activityStart=null,_activityEnd=null,_activityIsTruncated=false,_activityFilterKey='';
 let _sortCol='CreationTime',_sortAsc=false;
 let _capSortCol='timepoint',_capSortAsc=false;
@@ -591,6 +605,10 @@ function switchTab(tab) {
 
 // ── Charts init ───────────────────────────────────────────────────────
 function initCharts(){
+  if(typeof Chart === 'undefined'){
+    console.warn('Chart.js not available, skipping chart initialization');
+    return;
+  }
   const gc='rgba(30,45,69,0.5)',tk={color:'#64748b',font:{family:'JetBrains Mono',size:9}};
 
   // Capacity charts
@@ -603,8 +621,8 @@ function initCharts(){
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}},
         tooltip:{callbacks:{footer:items=>'\n🖱 Clica para ver detalhe'}}},
-      scales:{x:{ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
-              y:{ticks:{...tk,callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}},
+      scales:{x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
+              y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}},
       onClick:(evt,items)=>{ if(items.length) onChartClick(items[0].index); }}
   });
 
@@ -616,8 +634,8 @@ function initCharts(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
-      scales:{x:{ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
-              y:{ticks:{...tk,callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
+      scales:{x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
+              y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
   });
 
   breakdownChart=new Chart(document.getElementById('breakdownChart').getContext('2d'),{
@@ -628,39 +646,92 @@ function initCharts(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
-      scales:{x:{stacked:true,ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
-              y:{stacked:true,ticks:{...tk,callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
+      scales:{x:{stacked:true,ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
+              y:{stacked:true,ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
   });
 
   // Activity charts
-  timeChart=new Chart(document.getElementById('timeChart').getContext('2d'),{
-    type:'bar',data:{labels:[],datasets:[
-      {label:'Ver Relatório',data:[],backgroundColor:'rgba(0,212,255,0.6)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},
-      {label:'Refresh',      data:[],backgroundColor:'rgba(255,107,53,0.6)',borderColor:'#ff6b35',borderWidth:1,borderRadius:2},
-      {label:'Externo',      data:[],backgroundColor:'rgba(0,255,159,0.5)',borderColor:'#00ff9f',borderWidth:1,borderRadius:2},
-      {label:'Outros',       data:[],backgroundColor:'rgba(100,116,139,0.4)',borderColor:'#64748b',borderWidth:1,borderRadius:2},
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
-      scales:{x:{stacked:true,ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
-              y:{stacked:true,ticks:tk,grid:{color:gc},beginAtZero:true}}}
+  timeChart = new Chart(document.getElementById('timeChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: [],
+      datasets: [
+        {label:'Ver Relatório',data:[],backgroundColor:'rgba(0,212,255,0.6)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},
+        {label:'Refresh',      data:[],backgroundColor:'rgba(255,107,53,0.6)',borderColor:'#ff6b35',borderWidth:1,borderRadius:2},
+        {label:'Externo',      data:[],backgroundColor:'rgba(0,255,159,0.5)',borderColor:'#00ff9f',borderWidth:1,borderRadius:2},
+        {label:'Outros',       data:[],backgroundColor:'rgba(100,116,139,0.4)',borderColor:'#64748b',borderWidth:1,borderRadius:2}
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {mode:'index', intersect:false},
+      plugins: {legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
+      scales: {
+        x: {stacked:true, ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12}, grid:{color:gc}},
+        y: {stacked:true, ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9}}, grid:{color:gc}, beginAtZero:true}
+      }
+    }
   });
-  hourChart=new Chart(document.getElementById('hourChart').getContext('2d'),{
-    type:'bar',
-    data:{labels:[...Array(24)].map((_,i)=>String(i).padStart(2,'0')+'h'),
-          datasets:[{label:'Operações',data:Array(24).fill(0),backgroundColor:'rgba(168,85,247,0.5)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{ticks:tk,grid:{color:gc}},y:{ticks:tk,grid:{color:gc},beginAtZero:true}}}
+
+  hourChart = new Chart(document.getElementById('hourChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: [...Array(24)].map((_,i)=>String(i).padStart(2,'0')+'h'),
+      datasets:[{label:'Operações',data:Array(24).fill(0),backgroundColor:'rgba(168,85,247,0.5)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {legend:{display:false}},
+      scales: {x:{ticks:tk,grid:{color:gc}}, y:{ticks:tk,grid:{color:gc},beginAtZero:true}}
+    }
   });
-  methodChart=new Chart(document.getElementById('methodChart').getContext('2d'),{
-    type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:['#00d4ff','#ff6b35','#00ff9f','#a855f7','#f59e0b','#64748b'],borderColor:'#111827',borderWidth:2}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
-      plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8,padding:6}}}}
+
+  methodChart = new Chart(document.getElementById('methodChart').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: [],
+      datasets:[{data:[],backgroundColor:['#00d4ff','#ff6b35','#00ff9f','#a855f7','#f59e0b','#64748b'],borderColor:'#111827',borderWidth:2}]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '60%',
+      plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8,padding:6}}}
+    }
   });
-  artifactChart=new Chart(document.getElementById('artifactChart').getContext('2d'),{
-    type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:['#00d4ff','#a855f7','#ff6b35','#00ff9f','#f59e0b','#64748b'],borderColor:'#111827',borderWidth:2}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
-      plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8,padding:6}}}}
+
+  artifactChart = new Chart(document.getElementById('artifactChart').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: [],
+      datasets:[{data:[],backgroundColor:['#00d4ff','#a855f7','#ff6b35','#00ff9f','#f59e0b','#64748b'],borderColor:'#111827',borderWidth:2}]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '60%',
+      plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8,padding:6}}}
+    }
+  });
+
+  operationChart = new Chart(document.getElementById('operationChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: [],
+      datasets:[{label:'Operações',data:[],backgroundColor:'rgba(168,85,247,0.7)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {mode:'index', intersect:false},
+      plugins: {legend:{display:false}},
+      scales: {
+        x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(30,45,69,0.5)'},title:{display:true,text:'Operação',color:'#64748b',font:{family:'JetBrains Mono',size:11}}},
+        y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},precision:0},grid:{color:'rgba(30,45,69,0.5)'},beginAtZero:true,title:{display:true,text:'Contagem',color:'#64748b',font:{family:'JetBrains Mono',size:11}}}
+      }
+    }
   });
 }
 
@@ -672,8 +743,14 @@ async function api(ep,body={}){
   return d;
 }
 
+let _authRetryTimer = null;
+
 async function checkProxy(){
   const pb=document.getElementById('pb'),ab=document.getElementById('ab');
+  if(_authRetryTimer){
+    clearTimeout(_authRetryTimer);
+    _authRetryTimer = null;
+  }
   try{
     await api('/api/ping');
     pb.className='banner ok';pb.innerHTML='✓ Proxy activo';
@@ -682,16 +759,25 @@ async function checkProxy(){
     if(s.authenticated){
       ab.className='banner ok';
       ab.innerHTML=`✓ Autenticado como <strong style="margin-left:4px">${s.account}</strong>`;
-      // acc removed
       document.getElementById('cap').textContent='Pronto — selecciona um separador';
       document.getElementById('dot').className='dot on';
+    }else if(s.authenticating){
+      ab.className='banner info';
+      ab.innerHTML='⚙ Autenticação em curso — completa o login no terminal';
+      document.getElementById('cap').textContent='Proxy activo — a aguardar autenticação';
+      document.getElementById('dot').className='dot err';
+      _authRetryTimer = setTimeout(checkProxy, 3000);
     }else{
       ab.className='banner warn';
       ab.innerHTML='⚠ Não autenticado — verifica o terminal do proxy';
+      document.getElementById('cap').textContent='Proxy activo — autenticação necessária';
+      document.getElementById('dot').className='dot err';
+      _authRetryTimer = setTimeout(checkProxy, 5000);
     }
-  }catch{
+  }catch(e){
     pb.className='banner fail';
     pb.innerHTML='✗ Proxy não detectado — corre <strong style="margin-left:4px">python fabric_proxy.py</strong>';
+    _authRetryTimer = setTimeout(checkProxy, 5000);
   }
 }
 
@@ -835,10 +921,13 @@ async function doRefresh(){
     }
     _allEvents=events;
     _rawActivityEvents=events;
+    _activityFilterOptions=data.filterOptions||null;
+    _activitySummary=data.summaryTotals||null;
     _activityIsTruncated=Boolean(data.truncated);
     populateFilters();
     document.getElementById('dataInfo').style.display='flex';
-    document.getElementById('dataCount').textContent=_allEvents.length.toLocaleString();
+    const totalCount = data.originalCount != null ? data.originalCount : _allEvents.length;
+    document.getElementById('dataCount').textContent=totalCount.toLocaleString();
     document.getElementById('dataTime').textContent=`às ${now.toLocaleTimeString('pt-PT')}`;
     applyFilters();
   }catch(e){
@@ -965,6 +1054,8 @@ async function fetchActivityFilteredEvents(filters){
     const data=await api('/api/activity',{start:_activityStart,end:_activityEnd,filters});
     const events=data.activityEventEntities||[];
     _allEvents=events;
+    _activityFilterOptions=data.filterOptions||_activityFilterOptions;
+    _activitySummary=data.summaryTotals||_activitySummary;
     _activityIsTruncated=Boolean(data.truncated);
     _activityFilterKey=JSON.stringify(filters);
     if(data.warning){
@@ -973,7 +1064,8 @@ async function fetchActivityFilteredEvents(filters){
     } else {
       warningEl.style.display='none';
     }
-    document.getElementById('dataCount').textContent=_allEvents.length.toLocaleString();
+    const totalCount = data.originalCount != null ? data.originalCount : _allEvents.length;
+    document.getElementById('dataCount').textContent=totalCount.toLocaleString();
     renderCurrentActivity();
   }catch(e){
     console.error(e);
@@ -988,6 +1080,7 @@ function renderCurrentActivity(){
   renderHourChart(_allEvents);
   renderMethodChart(_allEvents);
   renderArtifactChart(_allEvents);
+  renderOperationChart(_allEvents);
   renderRankings(_allEvents);
   renderTable(_allEvents);
 }
@@ -1008,9 +1101,9 @@ document.addEventListener('click',()=>{
 });
 
 function populateFilters(){
-  const ops  =[...new Set(_allEvents.map(e=>e.Activity||e.OperationName||'').filter(Boolean))].sort();
-  const wss  =[...new Set(_allEvents.map(e=>e.WorkSpaceName||e.WorkspaceName||'').filter(Boolean))].sort();
-  const users=[...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
+  const ops = _activityFilterOptions?.type || [...new Set(_allEvents.map(e=>e.Activity||e.OperationName||'').filter(Boolean))].sort();
+  const wss = _activityFilterOptions?.ws || [...new Set(_allEvents.map(e=>e.WorkSpaceName||e.WorkspaceName||'').filter(Boolean))].sort();
+  const users = _activityFilterOptions?.user || [...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
   buildMultiSelect('ms-fType',ops);
   buildMultiSelect('ms-fWs',wss);
   buildMultiSelect('ms-fUser',users);
@@ -1048,7 +1141,7 @@ function applyFilters(){
     return true;
   });
   renderKPIs(filtered);renderTimeChart(filtered);renderHourChart(filtered);
-  renderMethodChart(filtered);renderArtifactChart(filtered);
+  renderMethodChart(filtered);renderArtifactChart(filtered);renderOperationChart(filtered);
   renderRankings(filtered);renderTable(filtered);
 }
 
@@ -1059,6 +1152,16 @@ function clearFilters(){
 }
 
 function renderKPIs(ev){
+  if(_activitySummary){
+    document.getElementById('k1').textContent=_activitySummary.totalEvents.toLocaleString();
+    document.getElementById('k2').textContent=_activitySummary.uniqueUsers.toLocaleString();
+    document.getElementById('k3').textContent=_activitySummary.viewReportCount.toLocaleString();
+    document.getElementById('k4').textContent=_activitySummary.refreshCount.toLocaleString();
+    document.getElementById('k5').textContent=_activitySummary.externalCount.toLocaleString();
+    document.getElementById('k6').textContent=_activitySummary.failureCount.toLocaleString();
+    document.getElementById('tcount').textContent=_activitySummary.totalEvents+' eventos';
+    return;
+  }
   const users=new Set(ev.map(e=>e.UserId||e.UserName||'?'));
   document.getElementById('k1').textContent=ev.length.toLocaleString();
   document.getElementById('k2').textContent=users.size;
@@ -1070,7 +1173,13 @@ function renderKPIs(ev){
 }
 
 function renderTimeChart(ev){
-  if(!ev.length){timeChart.data.labels=[];timeChart.data.datasets.forEach(d=>d.data=[]);timeChart.update();return;}
+  if(!timeChart) return;
+  if(!ev.length){
+    timeChart.data.labels=[];
+    timeChart.data.datasets.forEach(d=>d.data=[]);
+    timeChart.update();
+    return;
+  }
   const times=ev.map(e=>new Date(e.CreationTime||0).getTime()).filter(t=>t>0);
   const minT=Math.min(...times),maxT=Math.max(...times);
   const slots=Math.min(Math.ceil((maxT-minT)/3600000)+1,48);
@@ -1090,12 +1199,15 @@ function renderTimeChart(ev){
 }
 
 function renderHourChart(ev){
+  if(!hourChart) return;
   const hours=Array(24).fill(0);
   ev.forEach(e=>{const h=new Date(e.CreationTime||0).getHours();if(h>=0&&h<24)hours[h]++;});
-  hourChart.data.datasets[0].data=hours;hourChart.update();
+  hourChart.data.datasets[0].data=hours;
+  hourChart.update();
 }
 
 function renderMethodChart(ev){
+  if(!methodChart) return;
   const counts={};
   ev.forEach(e=>{
     let m=e.ConsumptionMethod||'';
@@ -1115,12 +1227,26 @@ function renderMethodChart(ev){
 }
 
 function renderArtifactChart(ev){
+  if(!artifactChart) return;
   const counts={};
   ev.forEach(e=>{const k=e.ArtifactKind||e.ObjectType||'Outro';counts[k]=(counts[k]||0)+1;});
   const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
   artifactChart.data.labels=sorted.map(x=>x[0]);
   artifactChart.data.datasets[0].data=sorted.map(x=>x[1]);
   artifactChart.update();
+}
+
+function renderOperationChart(ev){
+  if(!operationChart) return;
+  const counts={};
+  ev.forEach(e=>{
+    const op=e.Activity||e.OperationName||'Outro';
+    counts[op]=(counts[op]||0)+1;
+  });
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  operationChart.data.labels=sorted.map(x=>x[0]);
+  operationChart.data.datasets[0].data=sorted.map(x=>x[1]);
+  operationChart.update();
 }
 
 function topN(ev,keyFn,n=15){
@@ -1173,6 +1299,7 @@ function renderTable(ev){
     return 0;
   });
   const sa=col=>col===_sortCol?(_sortAsc?' ↑':' ↓'):'';
+  _currentActivityRows = ev;
   tbl.innerHTML=`<table>
     <thead><tr>
       <th onclick="sortBy('CreationTime')">Hora${sa('CreationTime')}</th>
@@ -1520,6 +1647,10 @@ let _refSortAsc = false;
 let refHourChart, refStatusChart, refDurChart;
 
 function initRefCharts(){
+  if(typeof Chart === 'undefined'){
+    console.warn('Chart.js not available, skipping refresh chart initialization');
+    return;
+  }
   const gc='rgba(30,45,69,0.5)',tk={color:'#64748b',font:{family:'JetBrains Mono',size:9}};
   refHourChart = new Chart(document.getElementById('refHourChart').getContext('2d'),{
     type:'bar',
@@ -1709,6 +1840,7 @@ function renderRefTable(data){
     return '<span style="color:var(--dim);font-size:10px">—</span>';
   };
 
+  _currentRefRows = data;
   tbl.innerHTML = `<table>
     <thead><tr>
       <th onclick="refSortBy('name')">Dataset${sa('name')}</th>
@@ -1744,12 +1876,92 @@ function renderRefTable(data){
 
 function refSortBy(col){
   if(_refSort===col) _refSortAsc=!_refSortAsc; else{_refSort=col;_refSortAsc=false;}
-  const cacheKey = 'ref_filtered';
   applyRefFilters();
 }
 
-initCharts();
-initRefCharts();
+function formatExcelValue(value){
+  if(value==null) return '';
+  const text = String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,' ');
+  return text;
+}
+
+function exportRowsToExcel(filename, rows, cols){
+  const header = cols.map(c=>`<th>${formatExcelValue(c.label)}</th>`).join('');
+  const body = rows.map(r => `<tr>${cols.map(c=>`<td>${formatExcelValue(c.value(r))}</td>`).join('')}</tr>`).join('');
+  const html = `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table>${header?`<thead><tr>${header}</tr></thead>`:''}<tbody>${body}</tbody></table></body></html>`;
+  const blob = new Blob([html], {type: 'application/vnd.ms-excel;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),100);
+}
+
+function exportCapacityToExcel(){
+  if(!_capData.length){alert('Sem dados para exportar.');return;}
+  exportRowsToExcel('Fabric_Capacity_Details.xls', _capData, [
+    {label:'Timepoint', value:d=>new Date(d.timepoint).toLocaleString('pt-PT')},
+    {label:'Interactive %', value:d=>((d.interactive||0)*100).toFixed(2)+'%'},
+    {label:'Background %', value:d=>((d.background||0)*100).toFixed(2)+'%'},
+    {label:'SKU CU %', value:d=>((d.sku_cu||0)*100).toFixed(2)+'%'}
+  ]);
+}
+
+function exportActivityToExcel(){
+  if(!_currentActivityRows.length){alert('Sem dados para exportar.');return;}
+  exportRowsToExcel('Fabric_Activity_Details.xls', _currentActivityRows, [
+    {label:'Hora', value:e=>e.CreationTime?new Date(e.CreationTime).toLocaleString('pt-PT'):'',},
+    {label:'Operação', value:e=>e.Activity||e.OperationName||''},
+    {label:'Utilizador', value:e=>e.UserId||e.UserName||''},
+    {label:'Item', value:e=>e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||''},
+    {label:'Workspace', value:e=>e.WorkSpaceName||e.WorkspaceName||''},
+    {label:'Método', value:e=>e.ConsumptionMethod||e.UserAgent||''},
+    {label:'IP', value:e=>e.ClientIP||''},
+    {label:'Estado', value:e=>e.IsSuccess===false?'Falhou':'OK'}
+  ]);
+}
+
+function exportRefreshesToExcel(){
+  if(!_currentRefRows.length){alert('Sem dados para exportar.');return;}
+  exportRowsToExcel('Fabric_Refreshes_Details.xls', _currentRefRows, [
+    {label:'Dataset', value:r=>r.name||''},
+    {label:'Configurado por', value:r=>r.configured_by||''},
+    {label:'Schedule', value:r=>r.schedule_enabled?'Activo':r.schedule_days?'Inactivo':'Sem schedule'},
+    {label:'Ref/Dia', value:r=>r.refreshes_per_day!=null?r.refreshes_per_day:''},
+    {label:'Horários', value:r=>r.schedule_times||''},
+    {label:'Dias', value:r=>r.schedule_days||''},
+    {label:'Dur. Média', value:r=>r.average_duration!=null?r.average_duration.toFixed(2):''},
+    {label:'Carga/Dia', value:r=>r.daily_load_min!=null?r.daily_load_min.toFixed(1):''},
+    {label:'Total Refresh', value:r=>r.refresh_count||0},
+    {label:'Falhas', value:r=>r.refresh_failures||0},
+    {label:'Último Estado', value:r=>r.last_status||''},
+    {label:'Último Refresh', value:r=>r.last_end?new Date(r.last_end).toLocaleString('pt-PT'):''}
+  ]);
+}
+
+function exportDrillToExcel(){
+  const rows = _lastRows || [];
+  if(!rows.length){alert('Sem dados para exportar.');return;}
+  const dims = [..._activeDims];
+  const grouped = groupRows(rows, dims);
+  exportRowsToExcel('Fabric_Timepoint_Detail.xls', grouped, [
+    ...dims.map(d=>({label:DIM_LABELS[d], value:r=>r[d]||''})),
+    {label:'Total CU (s)', value:r=>r.total_cu.toFixed(2)},
+    {label:'TP CU (s)', value:r=>r.timepoint_cu.toFixed(2)},
+    {label:'Duração (s)', value:r=>r.duration.toFixed(2)},
+    {label:'% Capacidade', value:r=>((r.pct_capacity||0)*100).toFixed(2)+'%'}
+  ]);
+}
+
+try {
+  initCharts();
+  initRefCharts();
+} catch(e) {
+  console.error('Chart initialization failed:', e);
+}
 checkProxy();
 </script>
 </body>
