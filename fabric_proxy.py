@@ -6,6 +6,7 @@ Abre o browser em: http://localhost:8765
 """
 
 import json
+import os
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -13,6 +14,23 @@ import threading
 import sys
 from datetime import datetime, timezone, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
+
+
+def _load_env(path=".env"):
+    """Carrega variáveis de um ficheiro .env para os.environ (sem dependências externas)."""
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                os.environ.setdefault(key.strip(), value.strip())
+    except FileNotFoundError:
+        pass
+
+
+_load_env()
 
 try:
     import msal
@@ -25,11 +43,20 @@ except ImportError:
 #   CONFIGURAÇÃO
 # ════════════════════════════════════════════════════════════
 
-TENANT_ID   = "cc1c517a-b933-41da-8549-2d5c307156fb"
-CAPACITY_ID = "2fd46d4a-fbcf-4c3e-93a8-cd9187693642"
-METRICS_WS  = "1a6d8f7d-ecac-481a-ba2a-ec96e353a7bc"
-METRICS_DS  = "bc534472-22e3-418f-9efa-fb729824d91a"
-PORT        = 8765
+TENANT_ID   = os.environ.get("TENANT_ID", "")
+CAPACITY_ID = os.environ.get("CAPACITY_ID", "")
+METRICS_WS  = os.environ.get("METRICS_WS", "")
+METRICS_DS  = os.environ.get("METRICS_DS", "")
+PORT        = int(os.environ.get("PORT", "8765"))
+
+_missing = [k for k, v in {
+    "TENANT_ID": TENANT_ID, "CAPACITY_ID": CAPACITY_ID,
+    "METRICS_WS": METRICS_WS, "METRICS_DS": METRICS_DS,
+}.items() if not v]
+if _missing:
+    print(f"\n  ERRO: variáveis não configuradas: {', '.join(_missing)}")
+    print("  Copia .env.example para .env e preenche os valores.\n")
+    sys.exit(1)
 
 # ════════════════════════════════════════════════════════════
 
