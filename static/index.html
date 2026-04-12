@@ -74,7 +74,7 @@
 
   /* KPIs */
   .kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
-  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:hidden}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:visible;min-width:0}
   .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
   .kpi.k1::before{background:var(--cu)}.kpi.k2::before{background:var(--int)}
   .kpi.k3::before{background:var(--bgo)}.kpi.k4::before{background:var(--warn)}
@@ -87,7 +87,7 @@
 
   /* Capacity KPIs */
   .cap-kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
-  .ckpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:hidden}
+  .ckpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:visible;min-width:0}
   .ckpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
   .ckpi.c1::before{background:var(--cu)}.ckpi.c2::before{background:var(--int)}
   .ckpi.c3::before{background:var(--bgo)}.ckpi.c4::before{background:var(--warn)}
@@ -314,7 +314,10 @@
           <option value="2">Últimas 2h</option>
           <option value="6">Últimas 6h</option>
           <option value="12">Últimas 12h</option>
-          <option value="24" selected>Últimas 24h</option>
+          <option value="24">Últimas 24h</option>
+          <option value="168">Últimos 7 dias</option>
+          <option value="360">Últimos 15 dias</option>
+          <option value="720">Últimos 30 dias</option>
         </select>
       </div>
       <div class="fg">
@@ -339,6 +342,7 @@
       <div class="data-info" id="dataInfo" style="display:none">
         <strong id="dataCount">0</strong> eventos · <span id="dataTime"></span>
       </div>
+      <div class="banner warn" id="activityWarning" style="display:none;margin-top:6px;font-size:10px;padding:8px 12px;line-height:1.3"></div>
     </div>
 
     <div class="kpi-strip">
@@ -573,7 +577,8 @@
 const P='http://localhost:8765';
 let timeChart,methodChart,artifactChart,hourChart;
 let cuChart,skuChart,breakdownChart;
-let _allEvents=[],_capData=[];
+let _allEvents=[],_rawActivityEvents=[],_capData=[];
+let _activityStart=null,_activityEnd=null,_activityIsTruncated=false,_activityFilterKey='';
 let _sortCol='CreationTime',_sortAsc=false;
 let _capSortCol='timepoint',_capSortAsc=false;
 
@@ -816,8 +821,21 @@ async function doRefresh(){
   try{
     const hours=parseInt(document.getElementById('fHours').value);
     const now=new Date(),from=new Date(now-hours*3600000);
-    const data=await api('/api/activity',{start:from.toISOString(),end:now.toISOString()});
-    _allEvents=data.activityEventEntities||[];
+    _activityStart = from.toISOString();
+    _activityEnd = now.toISOString();
+    _activityFilterKey = '';
+    const data=await api('/api/activity',{start:_activityStart,end:_activityEnd});
+    const events=data.activityEventEntities||[];
+    const warningEl=document.getElementById('activityWarning');
+    if(data.warning){
+      warningEl.textContent=data.warning;
+      warningEl.style.display='block';
+    } else {
+      warningEl.style.display='none';
+    }
+    _allEvents=events;
+    _rawActivityEvents=events;
+    _activityIsTruncated=Boolean(data.truncated);
     populateFilters();
     document.getElementById('dataInfo').style.display='flex';
     document.getElementById('dataCount').textContent=_allEvents.length.toLocaleString();
@@ -901,7 +919,12 @@ function clearMs(id){
     item.className='ms-item';
     item.querySelector('input').checked=false;
   });
-  updateMsLabel(id);applyFilters();
+  updateMsLabel(id);
+  _activityFilterKey='';
+  if(_rawActivityEvents.length){
+    _allEvents=_rawActivityEvents;
+  }
+  applyFilters();
 }
 
 function updateMsLabel(id){
@@ -919,6 +942,54 @@ function filterItems(id,q){
   document.getElementById(`${id}-list`).querySelectorAll('.ms-item').forEach(item=>{
     item.style.display=item.dataset.value.toLowerCase().includes(q.toLowerCase())?'':'none';
   });
+}
+
+function getActivityFilters(){
+  const type=[...(_msState['fType']||new Set())];
+  const ws=[...(_msState['fWs']||new Set())];
+  const user=[...(_msState['fUser']||new Set())];
+  const status=document.getElementById('fStatus').value;
+  return {type,ws,user,status};
+}
+
+function hasActiveActivityFilters(filters){
+  return filters.type.length||filters.ws.length||filters.user.length||filters.status;
+}
+
+async function fetchActivityFilteredEvents(filters){
+  if(!_activityStart||!_activityEnd) return;
+  const warningEl=document.getElementById('activityWarning');
+  const btn=document.getElementById('btnR');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>A carregar...';
+  try{
+    const data=await api('/api/activity',{start:_activityStart,end:_activityEnd,filters});
+    const events=data.activityEventEntities||[];
+    _allEvents=events;
+    _activityIsTruncated=Boolean(data.truncated);
+    _activityFilterKey=JSON.stringify(filters);
+    if(data.warning){
+      warningEl.textContent=data.warning;
+      warningEl.style.display='block';
+    } else {
+      warningEl.style.display='none';
+    }
+    document.getElementById('dataCount').textContent=_allEvents.length.toLocaleString();
+    renderCurrentActivity();
+  }catch(e){
+    console.error(e);
+    alert('Erro: '+e.message);
+  }
+  btn.disabled=false;btn.innerHTML='↻ Carregar Dados';
+}
+
+function renderCurrentActivity(){
+  renderKPIs(_allEvents);
+  renderTimeChart(_allEvents);
+  renderHourChart(_allEvents);
+  renderMethodChart(_allEvents);
+  renderArtifactChart(_allEvents);
+  renderRankings(_allEvents);
+  renderTable(_allEvents);
 }
 
 function toggleDropdown(id){
@@ -947,10 +1018,23 @@ function populateFilters(){
 
 function applyFilters(){
   if(!_allEvents.length) return;
-  const selType=_msState['fType']||new Set();
-  const selWs  =_msState['fWs']  ||new Set();
-  const selUser=_msState['fUser'] ||new Set();
-  const fStatus=document.getElementById('fStatus').value;
+  const filters=getActivityFilters();
+  const targetKey=JSON.stringify(filters);
+  const hasFilters=hasActiveActivityFilters(filters);
+  if(_activityIsTruncated && hasFilters && _activityFilterKey!==targetKey){
+    fetchActivityFilteredEvents(filters);
+    return;
+  }
+  if(!hasFilters && _activityFilterKey){
+    _activityFilterKey='';
+    if(_rawActivityEvents.length){
+      _allEvents=_rawActivityEvents;
+    }
+  }
+  const selType=new Set(filters.type);
+  const selWs=new Set(filters.ws);
+  const selUser=new Set(filters.user);
+  const fStatus=filters.status;
   const filtered=_allEvents.filter(e=>{
     const op  =e.Activity||e.OperationName||'';
     const ws  =e.WorkSpaceName||e.WorkspaceName||'';
@@ -1079,7 +1163,9 @@ function opBadge(op){
 function renderTable(ev){
   const tbl=document.getElementById('tbl');
   if(!ev.length){tbl.innerHTML='<div class="empty">Sem eventos com os filtros actuais</div>';return;}
-  const sorted=[...ev].sort((a,b)=>{
+  const MAX_EVENTS_FOR_TABLE = 5000;
+  const source = ev.length > MAX_EVENTS_FOR_TABLE ? ev.slice(-MAX_EVENTS_FOR_TABLE) : ev;
+  const sorted=[...source].sort((a,b)=>{
     let va=a[_sortCol]||'',vb=b[_sortCol]||'';
     if(_sortCol==='CreationTime'){va=new Date(va);vb=new Date(vb);}
     if(va<vb) return _sortAsc?-1:1;
@@ -1119,7 +1205,7 @@ function renderTable(ev){
       </tr>`;
     }).join('')}</tbody>
   </table>
-  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} eventos</div>`:''}`;
+  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} eventos${ev.length>source.length?' (limitado aos últimos '+source.length+' eventos)':''}</div>`:''}`;
 }
 
 function sortBy(col){
@@ -1377,7 +1463,7 @@ function renderDrillTable(rows, mode) {
   const totTp  = grouped.reduce((s,r)=>s+r.timepoint_cu,0);
   const totDur = grouped.reduce((s,r)=>s+r.duration,0);
   const totPct = grouped.reduce((s,r)=>s+r.pct_capacity,0)*100;
-  const metricCards = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:14px">
+  const metricCards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:14px">
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid ${color}">
       <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Total CU (s)</div>
       <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:${color}">${totCu.toFixed(2)}s</div>
