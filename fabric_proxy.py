@@ -1,0 +1,2216 @@
+"""
+Fabric Monitor — Activity Log
+Dependência: pip install msal
+Corre: python fabric_proxy.py
+Abre o browser em: http://localhost:8765
+"""
+
+import json
+import urllib.request
+import urllib.parse
+import urllib.error
+import threading
+import sys
+from datetime import datetime, timezone, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+try:
+    import msal
+except ImportError:
+    print("\n  ERRO: biblioteca 'msal' não encontrada.")
+    print("  Instala com: pip install msal\n")
+    sys.exit(1)
+
+# ════════════════════════════════════════════════════════════
+#   CONFIGURAÇÃO
+# ════════════════════════════════════════════════════════════
+
+TENANT_ID   = "cc1c517a-b933-41da-8549-2d5c307156fb"
+CAPACITY_ID = "2fd46d4a-fbcf-4c3e-93a8-cd9187693642"
+METRICS_WS  = "1a6d8f7d-ecac-481a-ba2a-ec96e353a7bc"
+METRICS_DS  = "bc534472-22e3-418f-9efa-fb729824d91a"
+PORT        = 8765
+
+# ════════════════════════════════════════════════════════════
+
+SCOPES           = ["https://analysis.windows.net/powerbi/api/.default"]
+PUBLIC_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+
+_token_cache = msal.SerializableTokenCache()
+_auth_lock   = threading.Lock()
+_auth_info   = {"account": ""}
+
+# ── Auth ──────────────────────────────────────────────────────────────
+def get_app():
+    return msal.PublicClientApplication(
+        PUBLIC_CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        token_cache=_token_cache,
+    )
+
+def get_token():
+    with _auth_lock:
+        app      = get_app()
+        accounts = app.get_accounts()
+        if accounts:
+            result = app.acquire_token_silent(SCOPES, account=accounts[0])
+            if result and "access_token" in result:
+                return result["access_token"]
+
+        flow = app.initiate_device_flow(scopes=SCOPES)
+        if "user_code" not in flow:
+            raise Exception("Falha Device Code: " + json.dumps(flow))
+
+        print("\n" + "─" * 60)
+        print("  AUTENTICAÇÃO NECESSÁRIA")
+        print("─" * 60)
+        print(f"\n  1. Abre: https://microsoft.com/devicelogin")
+        print(f"  2. Código: {flow['user_code']}")
+        print(f"\n  À espera...\n")
+
+        result = app.acquire_token_by_device_flow(flow)
+        if "access_token" not in result:
+            raise Exception("Falhou: " + result.get("error_description", str(result)))
+
+        accounts = get_app().get_accounts()
+        if accounts:
+            _auth_info["account"] = accounts[0].get("username", "")
+        print(f"  ✓ Autenticado como {_auth_info['account']}\n")
+        return result["access_token"]
+
+
+def call_api(url, token):
+    headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, {"error": e.read().decode(errors="replace")}
+
+
+# ── HTML ──────────────────────────────────────────────────────────────
+HTML = r"""<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NiW Fabric Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap');
+  :root {
+    --bg:#0a0e1a;--surface:#111827;--surface2:#1a2235;--border:#1e2d45;
+    --cu:#00d4ff;--int:#00ff9f;--bgo:#ff6b35;--warn:#f59e0b;--purple:#a855f7;
+    --text:#e2e8f0;--dim:#64748b;--bright:#f8fafc;--danger:#ef4444;--success:#22c55e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace;min-height:100vh}
+  body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,212,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+  .wrap{position:relative;z-index:1;width:100%;padding:20px}
+
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px}
+  h1{font-family:'Syne',sans-serif;font-weight:800;font-size:20px;color:var(--bright);letter-spacing:-.5px}
+  .sub{font-size:11px;color:var(--dim);margin-top:2px}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dim);margin-right:6px;vertical-align:middle}
+  .dot.on{background:var(--success);box-shadow:0 0 8px var(--success);animation:pulse 2s infinite}
+  .dot.err{background:var(--danger)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .ts{font-size:10px;color:var(--dim);text-align:right;margin-top:3px}
+  .acc{font-size:10px;color:var(--cu);text-align:right;margin-top:2px}
+
+  .banner{border-radius:6px;padding:10px 14px;font-size:11px;margin-bottom:10px;display:flex;align-items:center;gap:10px;border:1px solid var(--border)}
+  .banner.info{background:var(--surface2);border-left:3px solid var(--cu);color:var(--dim)}
+  .banner.ok  {background:rgba(34,197,94,.05);border-left:3px solid var(--success);color:var(--success)}
+  .banner.fail{background:rgba(239,68,68,.05);border-left:3px solid var(--danger);color:var(--danger)}
+  .banner.warn{background:rgba(245,158,11,.05);border-left:3px solid var(--warn);color:var(--warn)}
+
+  /* Tabs */
+  .tabs{display:flex;gap:2px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px}
+  .tab{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;padding:8px 20px;border-radius:5px;border:none;cursor:pointer;background:transparent;color:var(--dim);transition:all .2s;letter-spacing:.4px}
+  .tab:hover{color:var(--text)}
+  .tab.active{background:var(--cu);color:#000;font-weight:700}
+
+  .page{display:none}.page.active{display:block}
+
+  /* Toolbars */
+  .toolbar{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .fg{display:flex;flex-direction:column;gap:4px}
+  .fg label{font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase}
+  .fg select{background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;transition:border-color .2s}
+  .fg select:focus{border-color:var(--cu)}
+  .fg-sep{flex:1;min-width:8px}
+  .data-info{font-size:10px;color:var(--dim);align-self:center;white-space:nowrap}
+  .data-info strong{color:var(--cu)}
+
+  /* Multi-select */
+  .ms-wrap{position:relative;min-width:150px}
+  .ms-btn{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;cursor:pointer;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:4px;transition:border-color .2s}
+  .ms-btn:hover,.ms-btn.open{border-color:var(--cu)}
+  .ms-arrow{font-size:9px;color:var(--dim);flex-shrink:0}
+  .ms-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+  .ms-dropdown{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:400;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:240px;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.7)}
+  .ms-dropdown.open{display:block}
+  .ms-search{width:100%;background:var(--surface2);border:none;border-bottom:1px solid var(--border);padding:8px 10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none}
+  .ms-search::placeholder{color:var(--dim);opacity:.5}
+  .ms-list{max-height:240px;overflow-y:auto}
+  .ms-item{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;font-size:11px;color:var(--text);transition:background .1s}
+  .ms-item:hover{background:rgba(0,212,255,.05)}
+  .ms-item input[type=checkbox]{accent-color:var(--cu);width:12px;height:12px;flex-shrink:0;cursor:pointer}
+  .ms-item.checked{color:var(--cu)}
+  .ms-item-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ms-footer{display:flex;gap:6px;padding:7px 10px;border-top:1px solid var(--border)}
+  .ms-footer button{flex:1;font-family:'JetBrains Mono',monospace;font-size:10px;padding:5px;border-radius:4px;border:1px solid var(--border);cursor:pointer;background:transparent;color:var(--dim);transition:all .15s}
+  .ms-footer button:hover{border-color:var(--cu);color:var(--cu)}
+  .ms-count{display:inline-block;background:var(--cu);color:#000;border-radius:10px;font-size:9px;font-weight:700;padding:1px 5px;margin-left:3px}
+
+  /* KPIs */
+  .kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:hidden}
+  .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+  .kpi.k1::before{background:var(--cu)}.kpi.k2::before{background:var(--int)}
+  .kpi.k3::before{background:var(--bgo)}.kpi.k4::before{background:var(--warn)}
+  .kpi.k5::before{background:var(--purple)}.kpi.k6::before{background:var(--danger)}
+  .kl{font-size:9px;color:var(--dim);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:6px}
+  .kv{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;line-height:1}
+  .kv.k1{color:var(--cu)}.kv.k2{color:var(--int)}.kv.k3{color:var(--bgo)}
+  .kv.k4{color:var(--warn)}.kv.k5{color:var(--purple)}.kv.k6{color:var(--danger)}
+  .ks{font-size:9px;color:var(--dim);margin-top:3px}
+
+  /* Capacity KPIs */
+  .cap-kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+  .ckpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:hidden}
+  .ckpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+  .ckpi.c1::before{background:var(--cu)}.ckpi.c2::before{background:var(--int)}
+  .ckpi.c3::before{background:var(--bgo)}.ckpi.c4::before{background:var(--warn)}
+
+  /* Grids */
+  .grid-wide{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:12px;margin-bottom:12px}
+  .grid-mid {display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:12px}
+
+  .cc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;min-width:0}
+  .ct{font-family:'Syne',sans-serif;font-size:12px;font-weight:600;color:var(--bright);margin-bottom:2px}
+  .cs{font-size:10px;color:var(--dim);margin-bottom:12px}
+  .cw{position:relative;height:200px}
+  .cw.tall{height:250px}
+  .cw.xlarge{height:320px}
+  .cw.short{height:150px}
+
+  .sec{font-family:'Syne',sans-serif;font-size:10px;font-weight:600;color:var(--dim);letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;margin-top:4px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+
+  /* Throttle indicator */
+  .throttle-bar{height:8px;border-radius:4px;background:var(--surface2);overflow:hidden;margin-top:6px}
+  .throttle-fill{height:100%;border-radius:4px;transition:width .5s}
+
+  /* Rank list */
+  .rank-scroll{overflow-y:auto;max-height:200px}
+  .rank-list{display:flex;flex-direction:column;gap:5px;padding:2px 0}
+  .rank-item{display:flex;align-items:center;gap:6px}
+  .rank-n{font-family:'Syne',sans-serif;font-size:10px;font-weight:700;color:var(--dim);width:16px;text-align:right;flex-shrink:0}
+  .rank-bar-wrap{flex:1;background:var(--surface2);border-radius:3px;height:5px;overflow:hidden;min-width:30px}
+  .rank-bar{height:100%;border-radius:3px;transition:width .4s}
+  .rank-label{font-size:10px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:2}
+  .rank-val{font-size:10px;color:var(--dim);flex-shrink:0;text-align:right;min-width:26px}
+
+  /* Table */
+  .tc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px}
+  .th2{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .tt{font-family:'Syne',sans-serif;font-size:12px;font-weight:600;color:var(--bright)}
+  .tn{font-size:10px;color:var(--dim)}
+  .table-scroll{overflow-y:auto;overflow-x:auto;max-height:440px}
+  .table-scroll table{width:100%;border-collapse:collapse;font-size:11px}
+  .table-scroll thead{position:sticky;top:0;z-index:10}
+  .table-scroll thead th{background:var(--surface);border-bottom:2px solid var(--border)}
+  th{text-align:left;padding:7px 9px;font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;font-weight:500;white-space:nowrap;cursor:pointer;user-select:none}
+  th:hover{color:var(--cu)}
+  td{padding:7px 9px;border-bottom:1px solid rgba(30,45,69,.4);color:var(--text);vertical-align:middle;white-space:nowrap}
+  tr:hover td{background:rgba(0,212,255,.03)}
+  tr:last-child td{border-bottom:none}
+  .empty{text-align:center;padding:32px;color:var(--dim);font-size:12px}
+
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--cu);border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:5px;flex-shrink:0}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .btn{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;padding:7px 16px;border-radius:5px;border:none;cursor:pointer;transition:all .2s;letter-spacing:.4px;white-space:nowrap}
+  .btn-p{background:var(--cu);color:#000}.btn-p:hover{background:#33ddff;transform:translateY(-1px)}.btn-p:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .btn-s{background:transparent;border:1px solid var(--border);color:var(--dim)}.btn-s:hover{border-color:var(--cu);color:var(--cu)}
+
+  .badge{display:inline-block;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+  .b-view{background:rgba(0,212,255,.1);color:var(--cu)}
+  .b-refresh{background:rgba(255,107,53,.1);color:var(--bgo)}
+  .b-export{background:rgba(168,85,247,.1);color:var(--purple)}
+  .b-connect{background:rgba(0,255,159,.1);color:var(--int)}
+  .b-other{background:rgba(100,116,139,.1);color:var(--dim)}
+
+  ::-webkit-scrollbar{width:4px;height:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+
+  /* Drill-down panel */
+  .drill-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;align-items:flex-end;justify-content:center}
+  .drill-overlay.open{display:flex}
+  .drill-panel{background:var(--surface);border-top:1px solid var(--border);border-radius:12px 12px 0 0;width:100%;max-height:80vh;display:flex;flex-direction:column;padding:0;overflow:hidden}
+  .drill-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
+  .drill-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--bright)}
+  .drill-tp{font-size:10px;color:var(--dim);margin-top:2px}
+  .drill-close{font-size:20px;color:var(--dim);cursor:pointer;line-height:1;padding:4px 8px;border-radius:4px;border:none;background:transparent}
+  .drill-close:hover{color:var(--text);background:var(--surface2)}
+  .drill-tabs{display:flex;gap:2px;padding:8px 20px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+  .drill-tab{font-family:'JetBrains Mono',monospace;font-size:11px;padding:6px 16px;border-radius:5px;border:none;cursor:pointer;background:transparent;color:var(--dim);transition:all .2s}
+  .drill-tab:hover{color:var(--text)}
+  .drill-tab.active{background:var(--cu);color:#000;font-weight:700}
+  .drill-body{overflow-y:auto;flex:1;padding:16px 20px}
+  .drill-spin{text-align:center;padding:40px;color:var(--dim);font-size:12px}
+  .drill-empty{text-align:center;padding:40px;color:var(--dim);font-size:12px}
+  .drill-table{width:100%;border-collapse:collapse;font-size:11px}
+  .drill-table th{text-align:left;padding:7px 9px;font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid var(--border);font-weight:500;white-space:nowrap;position:sticky;top:0;background:var(--surface)}
+  .drill-table td{padding:7px 9px;border-bottom:1px solid rgba(30,45,69,.4);vertical-align:middle;white-space:nowrap}
+  .drill-table tr:hover td{background:rgba(0,212,255,.03)}
+  .drill-table tr:last-child td{border-bottom:none}
+  .cu-bar{display:inline-block;height:4px;border-radius:2px;vertical-align:middle;margin-left:6px;opacity:.7}
+  .status-ok{color:var(--success)}.status-fail{color:var(--danger)}.status-other{color:var(--dim)}
+  .hint-click{font-size:10px;color:var(--dim);text-align:center;padding:6px;font-style:italic}
+  .dim-selector{display:flex;align-items:center;gap:8px;padding:10px 0 14px;flex-wrap:wrap}
+  .dim-label{font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;white-space:nowrap}
+  .dim-pill{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;border:1px solid var(--border);font-size:10px;cursor:pointer;background:var(--surface2);color:var(--dim);transition:all .15s;user-select:none}
+  .dim-pill:hover{border-color:var(--cu);color:var(--cu)}
+  .dim-pill.active{background:rgba(0,212,255,.12);border-color:var(--cu);color:var(--cu)}
+  .dim-pill input{display:none}
+  .dim-sep{width:1px;height:16px;background:var(--border);margin:0 4px}
+  .drill-filter-row{display:flex;align-items:center;gap:8px;padding:10px 0 2px;flex-wrap:wrap}
+  .flt-pill{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);font-size:10px;cursor:pointer;background:var(--surface2);color:var(--dim);transition:all .15s;user-select:none;white-space:nowrap}
+  .flt-pill:hover{border-color:var(--warn);color:var(--warn)}
+  .flt-pill.active{background:rgba(245,158,11,.12);border-color:var(--warn);color:var(--warn)}
+  .flt-clear{font-size:10px;color:var(--dim);cursor:pointer;padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:transparent;font-family:'JetBrains Mono',monospace}
+  .flt-clear:hover{border-color:var(--danger);color:var(--danger)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1><span class="dot" id="dot"></span>NiW FABRIC MONITOR</h1>
+      <div class="sub" id="cap">A ligar ao proxy...</div>
+    </div>
+    <div>
+      <div class="ts" id="ts">—</div>
+    </div>
+  </header>
+
+  <div class="banner info" id="pb"><span class="spin"></span><span>A verificar proxy...</span></div>
+  <div class="banner" id="ab" style="display:none"></div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('capacity')">⚡ Utilização de Capacidade</button>
+    <button class="tab" onclick="switchTab('activity')">📋 Log de Actividade</button>
+    <button class="tab" onclick="switchTab('refreshes')">🔄 Refreshes</button>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!--  TAB: CAPACIDADE                                       -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="page active" id="page-capacity">
+
+    <div class="toolbar">
+      <div class="fg">
+        <label>Período</label>
+        <select id="cHours">
+          <option value="1">Última hora</option>
+          <option value="2">Últimas 2h</option>
+          <option value="4">Últimas 4h</option>
+          <option value="8">Últimas 8h</option>
+          <option value="24" selected>Últimas 24h</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>&nbsp;</label>
+        <button class="btn btn-p" id="btnCap" onclick="loadCapacity()">↻ Carregar Capacidade</button>
+      </div>
+      <div class="data-info" id="capInfo" style="display:none">
+        <strong id="capCount">0</strong> timepoints · <span id="capTime"></span>
+      </div>
+    </div>
+
+    <!-- KPIs de capacidade -->
+    <div class="cap-kpi-strip">
+      <div class="ckpi c1">
+        <div class="kl">CU Médio Total</div>
+        <div class="kv k1" id="ck1">—</div>
+        <div class="ks">Interactive + Background</div>
+      </div>
+      <div class="ckpi c2">
+        <div class="kl">Interactive CU Médio</div>
+        <div class="kv k2" id="ck2">—</div>
+        <div class="ks">billable</div>
+      </div>
+      <div class="ckpi c3">
+        <div class="kl">Background CU Médio</div>
+        <div class="kv k3" id="ck3">—</div>
+        <div class="ks">billable</div>
+      </div>
+      <div class="ckpi c4">
+        <div class="kl">Pico de Utilização</div>
+        <div class="kv k4" id="ck4">—</div>
+        <div class="ks">SKU CU % máximo</div>
+      </div>
+    </div>
+
+    <!-- Gráfico principal de CU -->
+    <div class="sec">Utilização de Capacidade (30s por ponto)</div>
+    <div class="cc" style="margin-bottom:12px">
+      <div class="ct">CU % ao longo do tempo</div>
+      <div class="cs">Interactive billable vs Background billable — granularidade de 30 segundos</div>
+      <div class="cw xlarge"><canvas id="cuChart"></canvas></div>
+    </div>
+
+    <!-- SKU % + Breakdown -->
+    <div class="grid-wide">
+      <div class="cc">
+        <div class="ct">SKU CU % — Utilização face ao limite</div>
+        <div class="cs">Percentagem de CU consumido face à capacidade total da F64</div>
+        <div class="cw tall"><canvas id="skuChart"></canvas></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Breakdown — Interactive vs Background</div>
+        <div class="cs">Decomposição do consumo por tipo</div>
+        <div class="cw tall"><canvas id="breakdownChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Tabela de timepoints -->
+    <div class="sec">Detalhe por Timepoint</div>
+    <div class="tc">
+      <div class="th2">
+        <div class="tt">Todos os Timepoints</div>
+        <div class="tn" id="capTcount"></div>
+      </div>
+      <div class="table-scroll" id="capTbl">
+        <div class="empty">Clica em "Carregar Capacidade" para começar</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!--  TAB: ACTIVIDADE                                       -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div class="page" id="page-activity">
+
+    <div class="toolbar">
+      <div class="fg">
+        <label>Período (próximo refresh)</label>
+        <select id="fHours">
+          <option value="1">Última hora</option>
+          <option value="2">Últimas 2h</option>
+          <option value="6">Últimas 6h</option>
+          <option value="12">Últimas 12h</option>
+          <option value="24" selected>Últimas 24h</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>&nbsp;</label>
+        <button class="btn btn-p" id="btnR" onclick="doRefresh()">↻ Carregar Dados</button>
+      </div>
+      <div class="fg"><label>Tipo de operação</label><div class="ms-wrap" id="ms-fType"></div></div>
+      <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-fWs"></div></div>
+      <div class="fg"><label>Utilizador</label><div class="ms-wrap" id="ms-fUser"></div></div>
+      <div class="fg">
+        <label>Estado</label>
+        <select id="fStatus" onchange="applyFilters()">
+          <option value="">Todos</option>
+          <option value="ok">✓ OK</option>
+          <option value="fail">✗ Falhou</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>&nbsp;</label>
+        <button class="btn btn-s" onclick="clearFilters()">✕ Limpar</button>
+      </div>
+      <div class="data-info" id="dataInfo" style="display:none">
+        <strong id="dataCount">0</strong> eventos · <span id="dataTime"></span>
+      </div>
+    </div>
+
+    <div class="kpi-strip">
+      <div class="kpi k1"><div class="kl">Total Operações</div><div class="kv k1" id="k1">—</div><div class="ks">filtro activo</div></div>
+      <div class="kpi k2"><div class="kl">Utilizadores Únicos</div><div class="kv k2" id="k2">—</div><div class="ks">filtro activo</div></div>
+      <div class="kpi k3"><div class="kl">Relatórios Vistos</div><div class="kv k3" id="k3">—</div><div class="ks">ViewReport</div></div>
+      <div class="kpi k4"><div class="kl">Refreshes</div><div class="kv k4" id="k4">—</div><div class="ks">RefreshDataset</div></div>
+      <div class="kpi k5"><div class="kl">Ligações Externas</div><div class="kv k5" id="k5">—</div><div class="ks">Desktop / Excel</div></div>
+      <div class="kpi k6"><div class="kl">Falhas</div><div class="kv k6" id="k6">—</div><div class="ks">IsSuccess = false</div></div>
+    </div>
+
+    <div class="sec">Actividade Temporal</div>
+    <div class="grid-wide">
+      <div class="cc">
+        <div class="ct">Operações por Hora</div>
+        <div class="cs">Volume de actividade ao longo do tempo</div>
+        <div class="cw tall"><canvas id="timeChart"></canvas></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Distribuição por Hora do Dia</div>
+        <div class="cs">A que horas a plataforma é mais usada</div>
+        <div class="cw tall"><canvas id="hourChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="sec">Distribuição</div>
+    <div class="grid-mid">
+      <div class="cc">
+        <div class="ct">Método de Acesso</div>
+        <div class="cs">Como os utilizadores acedem</div>
+        <div class="cw"><canvas id="methodChart"></canvas></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Tipo de Artefacto</div>
+        <div class="cs">Distribuição por ArtifactKind</div>
+        <div class="cw"><canvas id="artifactChart"></canvas></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Falhas por Operação</div>
+        <div class="cs">Onde estão a ocorrer erros</div>
+        <div class="rank-scroll" id="rankFails"><div class="empty" style="padding:14px">—</div></div>
+      </div>
+    </div>
+
+    <div class="sec">Rankings</div>
+    <div class="grid-mid">
+      <div class="cc">
+        <div class="ct">Top Relatórios</div>
+        <div class="cs">Por número de visualizações</div>
+        <div class="rank-scroll" id="rankReports"><div class="empty" style="padding:14px">—</div></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Top Datasets</div>
+        <div class="cs">Por número de acessos</div>
+        <div class="rank-scroll" id="rankDatasets"><div class="empty" style="padding:14px">—</div></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Top Utilizadores</div>
+        <div class="cs">Por número de operações</div>
+        <div class="rank-scroll" id="rankUsers"><div class="empty" style="padding:14px">—</div></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Top Workspaces</div>
+        <div class="cs">Por número de operações</div>
+        <div class="rank-scroll" id="rankWs"><div class="empty" style="padding:14px">—</div></div>
+      </div>
+      <div class="cc">
+        <div class="ct">Aplicações Externas</div>
+        <div class="cs">ConnectFromExternalApplication</div>
+        <div class="rank-scroll" id="rankExternal"><div class="empty" style="padding:14px">—</div></div>
+      </div>
+    </div>
+
+    <div class="sec">Log Detalhado</div>
+    <div class="tc">
+      <div class="th2">
+        <div class="tt">Todos os Eventos</div>
+        <div class="tn" id="tcount"></div>
+      </div>
+      <div class="table-scroll" id="tbl">
+        <div class="empty">Clica em "Carregar Dados" para começar</div>
+      </div>
+    </div>
+
+  </div><!-- /page-activity -->
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!--  TAB: REFRESHES                                        -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="page" id="page-refreshes">
+
+  <div class="toolbar">
+    <div class="fg">
+      <label>&nbsp;</label>
+      <button class="btn btn-p" id="btnRef" onclick="loadRefreshes()">↻ Carregar Refreshes</button>
+    </div>
+    <div class="fg"><label>Workspace / Proprietário</label><div class="ms-wrap" id="ms-rWs"></div></div>
+    <div class="fg"><label>Dataset</label><div class="ms-wrap" id="ms-rDs"></div></div>
+    <div class="fg"><label>Schedule</label>
+      <select id="rSched" onchange="applyRefFilters()">
+        <option value="">Todos</option>
+        <option value="enabled">Activo</option>
+        <option value="disabled">Inactivo</option>
+        <option value="none">Sem schedule</option>
+      </select>
+    </div>
+    <div class="fg"><label>Último estado</label>
+      <select id="rStatus" onchange="applyRefFilters()">
+        <option value="">Todos</option>
+        <option value="Completed">✓ Completed</option>
+        <option value="Failed">✗ Failed</option>
+        <option value="Unknown">Unknown</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>&nbsp;</label>
+      <button class="btn btn-s" onclick="clearRefFilters()">✕ Limpar</button>
+    </div>
+    <div class="data-info" id="refInfo" style="display:none">
+      <strong id="refCount">0</strong> datasets · <span id="refTime"></span>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="kpi-strip" id="refKpis">
+    <div class="kpi k1"><div class="kl">Total Datasets</div><div class="kv k1" id="rk1">—</div><div class="ks">com refresh</div></div>
+    <div class="kpi k2"><div class="kl">Schedules Activos</div><div class="kv k2" id="rk2">—</div><div class="ks">enabled</div></div>
+    <div class="kpi k3"><div class="kl">Total Refreshes</div><div class="kv k3" id="rk3">—</div><div class="ks">no período</div></div>
+    <div class="kpi k4"><div class="kl">Total Falhas</div><div class="kv k4" id="rk4">—</div><div class="ks">refresh failures</div></div>
+    <div class="kpi k5"><div class="kl">Carga Diária Total</div><div class="kv k5" id="rk5">—</div><div class="ks">min/dia estimados</div></div>
+    <div class="kpi k6"><div class="kl">Duração Média</div><div class="kv k6" id="rk6">—</div><div class="ks">minutos</div></div>
+  </div>
+
+  <!-- Charts row -->
+  <div class="sec">Distribuição</div>
+  <div class="grid-mid">
+    <div class="cc">
+      <div class="ct">Refreshes por Hora do Dia</div>
+      <div class="cs">Padrão de execução configurado</div>
+      <div class="cw"><canvas id="refHourChart"></canvas></div>
+    </div>
+    <div class="cc">
+      <div class="ct">Estado do Último Refresh</div>
+      <div class="cs">Completed / Failed / Unknown</div>
+      <div class="cw"><canvas id="refStatusChart"></canvas></div>
+    </div>
+    <div class="cc">
+      <div class="ct">Distribuição de Duração</div>
+      <div class="cs">Duração média por dataset (min)</div>
+      <div class="cw"><canvas id="refDurChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Rankings -->
+  <div class="sec">Rankings</div>
+  <div class="grid-mid">
+    <div class="cc">
+      <div class="ct">Top Carga Diária</div>
+      <div class="cs">avg_duration × refreshes_per_day (min/dia)</div>
+      <div class="rank-scroll" id="rrLoad"><div class="empty" style="padding:14px">—</div></div>
+    </div>
+    <div class="cc">
+      <div class="ct">Top por Nº Refreshes</div>
+      <div class="cs">Total de refreshes executados</div>
+      <div class="rank-scroll" id="rrCount"><div class="empty" style="padding:14px">—</div></div>
+    </div>
+    <div class="cc">
+      <div class="ct">Top Falhas</div>
+      <div class="cs">Datasets com mais falhas</div>
+      <div class="rank-scroll" id="rrFail"><div class="empty" style="padding:14px">—</div></div>
+    </div>
+    <div class="cc">
+      <div class="ct">Top Duração Média</div>
+      <div class="cs">Datasets mais lentos (min)</div>
+      <div class="rank-scroll" id="rrDur"><div class="empty" style="padding:14px">—</div></div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="sec">Detalhe por Dataset</div>
+  <div class="tc">
+    <div class="th2">
+      <div class="tt">Todos os Datasets</div>
+      <div class="tn" id="refTcount"></div>
+    </div>
+    <div class="table-scroll" id="refTbl">
+      <div class="empty">Clica em "Carregar Refreshes" para começar</div>
+    </div>
+  </div>
+
+</div><!-- /page-refreshes -->
+
+<!-- Drill-down panel -->
+<div class="drill-overlay" id="drillOverlay" onclick="closeDrill(event)">
+  <div class="drill-panel">
+    <div class="drill-header">
+      <div>
+        <div class="drill-title" id="drillTitle">Detalhe do Timepoint</div>
+        <div class="drill-tp" id="drillTp"></div>
+      </div>
+      <button class="drill-close" onclick="closeDrillPanel()">✕</button>
+    </div>
+    <div class="drill-tabs">
+      <button class="drill-tab active" id="dtab-int" onclick="switchDrillTab('interactive')">⚡ Interactive</button>
+      <button class="drill-tab" id="dtab-bg" onclick="switchDrillTab('background')">⏱ Background</button>
+    </div>
+    <div style="padding:0 20px 10px;border-bottom:1px solid var(--border);background:var(--surface)">
+      <div class="dim-selector" id="dimSelector">
+        <span class="dim-label">Agrupar:</span>
+        <label class="dim-pill active" onclick="toggleDim('operation')"><span>Operação</span></label>
+        <label class="dim-pill" onclick="toggleDim('user')"><span>Utilizador</span></label>
+        <label class="dim-pill" onclick="toggleDim('item')"><span>Item</span></label>
+        <label class="dim-pill" onclick="toggleDim('workspace')"><span>Workspace</span></label>
+        <label class="dim-pill" onclick="toggleDim('item_kind')"><span>Tipo</span></label>
+        <label class="dim-pill" onclick="toggleDim('status')"><span>Estado</span></label>
+        <label class="dim-pill" onclick="toggleDim('billing_type')"><span>Billing Type</span></label>
+      </div>
+      <div class="drill-filter-row" id="drillFilterRow">
+        <span class="dim-label">Filtrar:</span>
+        <span style="font-size:10px;color:var(--dim);font-style:italic">Carrega dados primeiro</span>
+      </div>
+    </div>
+    <div class="drill-body" id="drillBody">
+      <div class="drill-spin"><span class="spin"></span> A carregar...</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+const P='http://localhost:8765';
+let timeChart,methodChart,artifactChart,hourChart;
+let cuChart,skuChart,breakdownChart;
+let _allEvents=[],_capData=[];
+let _sortCol='CreationTime',_sortAsc=false;
+let _capSortCol='timepoint',_capSortAsc=false;
+
+// ── Tabs ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active', ['capacity','activity','refreshes'][i]===tab));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('page-'+tab).classList.add('active');
+}
+
+// ── Charts init ───────────────────────────────────────────────────────
+function initCharts(){
+  const gc='rgba(30,45,69,0.5)',tk={color:'#64748b',font:{family:'JetBrains Mono',size:9}};
+
+  // Capacity charts
+  cuChart=new Chart(document.getElementById('cuChart').getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'Interactive billable %',data:[],borderColor:'#00ff9f',backgroundColor:'rgba(0,255,159,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
+      {label:'Background billable %', data:[],borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}},
+        tooltip:{callbacks:{footer:items=>'\n🖱 Clica para ver detalhe'}}},
+      scales:{x:{ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
+              y:{ticks:{...tk,callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}},
+      onClick:(evt,items)=>{ if(items.length) onChartClick(items[0].index); }}
+  });
+
+  skuChart=new Chart(document.getElementById('skuChart').getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[
+      {label:'SKU CU %',data:[],borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,0.1)',fill:true,tension:0.3,pointRadius:0,borderWidth:2},
+      {label:'Limite (100%)',data:[],borderColor:'rgba(239,68,68,0.5)',borderDash:[5,5],fill:false,pointRadius:0,borderWidth:1},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
+      scales:{x:{ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
+              y:{ticks:{...tk,callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
+  });
+
+  breakdownChart=new Chart(document.getElementById('breakdownChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:[],datasets:[
+      {label:'Interactive billable',data:[],backgroundColor:'rgba(0,255,159,0.7)',borderColor:'#00ff9f',borderWidth:1,borderRadius:2},
+      {label:'Background billable', data:[],backgroundColor:'rgba(255,107,53,0.7)',borderColor:'#ff6b35',borderWidth:1,borderRadius:2},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
+      scales:{x:{stacked:true,ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
+              y:{stacked:true,ticks:{...tk,callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
+  });
+
+  // Activity charts
+  timeChart=new Chart(document.getElementById('timeChart').getContext('2d'),{
+    type:'bar',data:{labels:[],datasets:[
+      {label:'Ver Relatório',data:[],backgroundColor:'rgba(0,212,255,0.6)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},
+      {label:'Refresh',      data:[],backgroundColor:'rgba(255,107,53,0.6)',borderColor:'#ff6b35',borderWidth:1,borderRadius:2},
+      {label:'Externo',      data:[],backgroundColor:'rgba(0,255,159,0.5)',borderColor:'#00ff9f',borderWidth:1,borderRadius:2},
+      {label:'Outros',       data:[],backgroundColor:'rgba(100,116,139,0.4)',borderColor:'#64748b',borderWidth:1,borderRadius:2},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
+      scales:{x:{stacked:true,ticks:{...tk,maxTicksLimit:12},grid:{color:gc}},
+              y:{stacked:true,ticks:tk,grid:{color:gc},beginAtZero:true}}}
+  });
+  hourChart=new Chart(document.getElementById('hourChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:[...Array(24)].map((_,i)=>String(i).padStart(2,'0')+'h'),
+          datasets:[{label:'Operações',data:Array(24).fill(0),backgroundColor:'rgba(168,85,247,0.5)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:tk,grid:{color:gc}},y:{ticks:tk,grid:{color:gc},beginAtZero:true}}}
+  });
+  methodChart=new Chart(document.getElementById('methodChart').getContext('2d'),{
+    type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:['#00d4ff','#ff6b35','#00ff9f','#a855f7','#f59e0b','#64748b'],borderColor:'#111827',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
+      plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8,padding:6}}}}
+  });
+  artifactChart=new Chart(document.getElementById('artifactChart').getContext('2d'),{
+    type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:['#00d4ff','#a855f7','#ff6b35','#00ff9f','#f59e0b','#64748b'],borderColor:'#111827',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
+      plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8,padding:6}}}}
+  });
+}
+
+// ── API ───────────────────────────────────────────────────────────────
+async function api(ep,body={}){
+  const r=await fetch(P+ep,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok) throw new Error(d.error||`HTTP ${r.status}`);
+  return d;
+}
+
+async function checkProxy(){
+  const pb=document.getElementById('pb'),ab=document.getElementById('ab');
+  try{
+    await api('/api/ping');
+    pb.className='banner ok';pb.innerHTML='✓ Proxy activo';
+    const s=await api('/api/auth_status');
+    ab.style.display='flex';
+    if(s.authenticated){
+      ab.className='banner ok';
+      ab.innerHTML=`✓ Autenticado como <strong style="margin-left:4px">${s.account}</strong>`;
+      // acc removed
+      document.getElementById('cap').textContent='Pronto — selecciona um separador';
+      document.getElementById('dot').className='dot on';
+    }else{
+      ab.className='banner warn';
+      ab.innerHTML='⚠ Não autenticado — verifica o terminal do proxy';
+    }
+  }catch{
+    pb.className='banner fail';
+    pb.innerHTML='✗ Proxy não detectado — corre <strong style="margin-left:4px">python fabric_proxy.py</strong>';
+  }
+}
+
+// ── CAPACITY ──────────────────────────────────────────────────────────
+async function loadCapacity(){
+  const btn=document.getElementById('btnCap');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>A carregar...';
+  try{
+    const hours=parseInt(document.getElementById('cHours').value);
+    const data=await api('/api/capacity',{hours});
+    _capData=data.timepoints||[];
+
+    document.getElementById('capInfo').style.display='flex';
+    document.getElementById('capCount').textContent=_capData.length.toLocaleString();
+    document.getElementById('capTime').textContent=`às ${new Date().toLocaleTimeString('pt-PT')}`;
+    document.getElementById('capTcount').textContent=_capData.length+' timepoints';
+
+    renderCapacity(_capData);
+  }catch(e){
+    document.getElementById('cap').textContent='Erro: '+e.message;
+    console.error(e);
+  }
+  btn.disabled=false;btn.innerHTML='↻ Carregar Capacidade';
+}
+
+function renderCapacity(data){
+  if(!data.length) return;
+
+  // Subsample for chart performance (max 500 points)
+  const step  = data.length > 500 ? Math.ceil(data.length/500) : 1;
+  const sample= data.filter((_,i)=>i%step===0);
+
+  const labels= sample.map(d=>new Date(d.timepoint).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+
+  // Interactive and Background are already in % (0.57 = 57%)
+  const intPct= sample.map(d=>+((d.interactive||0)*100).toFixed(2));
+  const bgPct = sample.map(d=>+((d.background||0)*100).toFixed(2));
+
+  // SKU CU % — value from model is already a ratio (1.0 = 100%)
+  // but may also come as actual % depending on model version — detect automatically
+  const rawSku = data.map(d=>d.sku_cu||0);
+  const maxRaw = Math.max(...rawSku);
+  // if max > 2, assume already in % form; otherwise multiply by 100
+  const skuMult = maxRaw > 2 ? 1 : 100;
+  const skuPct= sample.map(d=>+((d.sku_cu||0)*skuMult).toFixed(2));
+
+  // CU line chart
+  cuChart.data.labels=labels;
+  cuChart.data.datasets[0].data=intPct;
+  cuChart.data.datasets[1].data=bgPct;
+  cuChart.update();
+
+  // SKU chart — remove fixed 100 line, let axis auto-scale
+  skuChart.data.labels=labels;
+  skuChart.data.datasets[0].data=skuPct;
+  skuChart.data.datasets[1].data=sample.map(()=>100); // 100% limit line
+  skuChart.update();
+
+  // Breakdown bar chart (billable only)
+  const step2  = data.length > 100 ? Math.ceil(data.length/100) : 1;
+  const sample2= data.filter((_,i)=>i%step2===0);
+  const labels2= sample2.map(d=>new Date(d.timepoint).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+  breakdownChart.data.labels=labels2;
+  breakdownChart.data.datasets[0].data=sample2.map(d=>+((d.interactive||0)*100).toFixed(2));
+  breakdownChart.data.datasets[1].data=sample2.map(d=>+((d.background||0)*100).toFixed(2));
+  breakdownChart.update();
+
+  // KPIs — use full data (not subsampled)
+  const avg=arr=>arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1):0;
+  const intBill = data.map(d=>(d.interactive||0)*100);
+  const bgBill  = data.map(d=>(d.background||0)*100);
+  const total   = data.map((_,i)=>intBill[i]+bgBill[i]);
+  const skuAll  = data.map(d=>(d.sku_cu||0)*skuMult);
+
+  document.getElementById('ck1').textContent=avg(total)+'%';
+  document.getElementById('ck2').textContent=avg(intBill)+'%';
+  document.getElementById('ck3').textContent=avg(bgBill)+'%';
+  document.getElementById('ck4').textContent=Math.max(...skuAll).toFixed(1)+'%';
+
+  // Table
+  renderCapTable(data);
+}
+
+function renderCapTable(data){
+  const sorted=[...data].sort((a,b)=>{
+    let va=a[_capSortCol],vb=b[_capSortCol];
+    if(va<vb) return _capSortAsc?-1:1;
+    if(va>vb) return _capSortAsc?1:-1;
+    return 0;
+  });
+  const sa=col=>col===_capSortCol?(_capSortAsc?' ↑':' ↓'):'';
+
+  function pct(v){
+    const p=(v*100).toFixed(2);
+    const color=v>0.8?'var(--danger)':v>0.5?'var(--warn)':'var(--success)';
+    return `<span style="color:${color}">${p}%</span>`;
+  }
+
+  document.getElementById('capTbl').innerHTML=`<table>
+    <thead><tr>
+      <th onclick="capSortBy('timepoint')">Timepoint${sa('timepoint')}</th>
+      <th onclick="capSortBy('interactive')">Interactive %${sa('interactive')}</th>
+      <th onclick="capSortBy('background')">Background %${sa('background')}</th>
+      <th onclick="capSortBy('sku_cu')">SKU CU %${sa('sku_cu')}</th>
+    </tr></thead>
+    <tbody>${sorted.slice(0,500).map(d=>`<tr>
+      <td style="font-size:10px">${new Date(d.timepoint).toLocaleString('pt-PT')}</td>
+      <td>${pct(d.interactive)}</td>
+      <td>${pct(d.background)}</td>
+      <td>${pct(d.interactive_nb)}</td>
+      <td>${pct(d.background_nb)}</td>
+      <td>${pct(d.sku_cu)}</td>
+    </tr>`).join('')}</tbody>
+  </table>
+  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} timepoints</div>`:''}`;
+}
+
+function capSortBy(col){
+  if(_capSortCol===col) _capSortAsc=!_capSortAsc; else{_capSortCol=col;_capSortAsc=false;}
+  renderCapTable(_capData);
+}
+
+// ── ACTIVITY ──────────────────────────────────────────────────────────
+async function doRefresh(){
+  const btn=document.getElementById('btnR');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>A carregar...';
+  try{
+    const hours=parseInt(document.getElementById('fHours').value);
+    const now=new Date(),from=new Date(now-hours*3600000);
+    const data=await api('/api/activity',{start:from.toISOString(),end:now.toISOString()});
+    _allEvents=data.activityEventEntities||[];
+    populateFilters();
+    document.getElementById('dataInfo').style.display='flex';
+    document.getElementById('dataCount').textContent=_allEvents.length.toLocaleString();
+    document.getElementById('dataTime').textContent=`às ${now.toLocaleTimeString('pt-PT')}`;
+    applyFilters();
+  }catch(e){
+    console.error(e);
+    alert('Erro: '+e.message);
+  }
+  btn.disabled=false;btn.innerHTML='↻ Carregar Dados';
+}
+
+const _msState={};
+function buildMultiSelect(containerId,values){
+  const id=containerId.replace('ms-','');
+  if(!_msState[id]) _msState[id]=new Set();
+  const container=document.getElementById(containerId);
+  container.innerHTML='';
+  const btn=document.createElement('button');
+  btn.className='ms-btn';
+  btn.innerHTML=`<span class="ms-label" id="${id}-label">Todos</span><span class="ms-arrow">▾</span>`;
+  btn.onclick=e=>{e.stopPropagation();toggleDropdown(id);};
+  container.appendChild(btn);
+  const dd=document.createElement('div');
+  dd.className='ms-dropdown';dd.id=`${id}-dd`;
+  const srch=document.createElement('input');
+  srch.type='text';srch.placeholder='Pesquisar...';srch.className='ms-search';
+  srch.oninput=()=>filterItems(id,srch.value);
+  srch.onclick=e=>e.stopPropagation();
+  dd.appendChild(srch);
+  const list=document.createElement('div');
+  list.className='ms-list';list.id=`${id}-list`;
+  values.forEach(v=>list.appendChild(makeItem(id,v)));
+  dd.appendChild(list);
+  const footer=document.createElement('div');
+  footer.className='ms-footer';
+  footer.innerHTML=`<button onclick="selectAll('${id}')">Todos</button><button onclick="clearMs('${id}')">Limpar</button>`;
+  dd.appendChild(footer);
+  container.appendChild(dd);
+  updateMsLabel(id);
+}
+
+function makeItem(id,v){
+  const item=document.createElement('div');
+  item.className='ms-item'+(_msState[id].has(v)?' checked':'');
+  item.dataset.value=v;
+  const cb=document.createElement('input');
+  cb.type='checkbox';cb.checked=_msState[id].has(v);
+  cb.onchange=()=>toggleMs(id,v);
+  cb.onclick=e=>e.stopPropagation();
+  item.onclick=()=>toggleMs(id,v);
+  const lbl=document.createElement('span');
+  lbl.className='ms-item-text';lbl.textContent=v;lbl.title=v;
+  item.appendChild(cb);item.appendChild(lbl);
+  return item;
+}
+
+function toggleMs(id,v){
+  if(_msState[id].has(v)) _msState[id].delete(v); else _msState[id].add(v);
+  document.getElementById(`${id}-list`).querySelectorAll('.ms-item').forEach(item=>{
+    if(item.dataset.value===v){
+      item.className='ms-item'+(_msState[id].has(v)?' checked':'');
+      item.querySelector('input').checked=_msState[id].has(v);
+    }
+  });
+  updateMsLabel(id);applyFilters();
+}
+
+function selectAll(id){
+  document.getElementById(`${id}-list`).querySelectorAll('.ms-item').forEach(item=>{
+    _msState[id].add(item.dataset.value);
+    item.className='ms-item checked';
+    item.querySelector('input').checked=true;
+  });
+  updateMsLabel(id);applyFilters();
+}
+
+function clearMs(id){
+  _msState[id].clear();
+  document.getElementById(`${id}-list`).querySelectorAll('.ms-item').forEach(item=>{
+    item.className='ms-item';
+    item.querySelector('input').checked=false;
+  });
+  updateMsLabel(id);applyFilters();
+}
+
+function updateMsLabel(id){
+  const sel=_msState[id],label=document.getElementById(`${id}-label`);
+  if(!label) return;
+  if(sel.size===0){label.innerHTML='Todos';}
+  else{
+    const names=[...sel].slice(0,2).join(', ');
+    const extra=sel.size>2?` <span class="ms-count">+${sel.size-2}</span>`:'';
+    label.innerHTML=names+extra;
+  }
+}
+
+function filterItems(id,q){
+  document.getElementById(`${id}-list`).querySelectorAll('.ms-item').forEach(item=>{
+    item.style.display=item.dataset.value.toLowerCase().includes(q.toLowerCase())?'':'none';
+  });
+}
+
+function toggleDropdown(id){
+  document.querySelectorAll('.ms-dropdown.open').forEach(dd=>{
+    if(dd.id!==`${id}-dd`){dd.classList.remove('open');dd.previousElementSibling?.classList.remove('open');}
+  });
+  const dd=document.getElementById(`${id}-dd`),btn=dd?.previousElementSibling;
+  dd?.classList.toggle('open');btn?.classList.toggle('open');
+  if(dd?.classList.contains('open')) dd.querySelector('.ms-search')?.focus();
+}
+
+document.addEventListener('click',()=>{
+  document.querySelectorAll('.ms-dropdown.open').forEach(dd=>{
+    dd.classList.remove('open');dd.previousElementSibling?.classList.remove('open');
+  });
+});
+
+function populateFilters(){
+  const ops  =[...new Set(_allEvents.map(e=>e.Activity||e.OperationName||'').filter(Boolean))].sort();
+  const wss  =[...new Set(_allEvents.map(e=>e.WorkSpaceName||e.WorkspaceName||'').filter(Boolean))].sort();
+  const users=[...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
+  buildMultiSelect('ms-fType',ops);
+  buildMultiSelect('ms-fWs',wss);
+  buildMultiSelect('ms-fUser',users);
+}
+
+function applyFilters(){
+  if(!_allEvents.length) return;
+  const selType=_msState['fType']||new Set();
+  const selWs  =_msState['fWs']  ||new Set();
+  const selUser=_msState['fUser'] ||new Set();
+  const fStatus=document.getElementById('fStatus').value;
+  const filtered=_allEvents.filter(e=>{
+    const op  =e.Activity||e.OperationName||'';
+    const ws  =e.WorkSpaceName||e.WorkspaceName||'';
+    const user=e.UserId||e.UserName||'';
+    const ok  =e.IsSuccess!==false;
+    if(selType.size>0&&!selType.has(op))  return false;
+    if(selWs.size>0  &&!selWs.has(ws))   return false;
+    if(selUser.size>0&&!selUser.has(user))return false;
+    if(fStatus==='ok'  &&!ok) return false;
+    if(fStatus==='fail'&& ok) return false;
+    return true;
+  });
+  renderKPIs(filtered);renderTimeChart(filtered);renderHourChart(filtered);
+  renderMethodChart(filtered);renderArtifactChart(filtered);
+  renderRankings(filtered);renderTable(filtered);
+}
+
+function clearFilters(){
+  ['fType','fWs','fUser'].forEach(id=>clearMs(id));
+  document.getElementById('fStatus').value='';
+  applyFilters();
+}
+
+function renderKPIs(ev){
+  const users=new Set(ev.map(e=>e.UserId||e.UserName||'?'));
+  document.getElementById('k1').textContent=ev.length.toLocaleString();
+  document.getElementById('k2').textContent=users.size;
+  document.getElementById('k3').textContent=ev.filter(e=>e.Activity==='ViewReport').length.toLocaleString();
+  document.getElementById('k4').textContent=ev.filter(e=>e.Activity==='RefreshDataset').length.toLocaleString();
+  document.getElementById('k5').textContent=ev.filter(e=>e.Activity==='ConnectFromExternalApplication').length.toLocaleString();
+  document.getElementById('k6').textContent=ev.filter(e=>e.IsSuccess===false).length.toLocaleString();
+  document.getElementById('tcount').textContent=ev.length+' eventos';
+}
+
+function renderTimeChart(ev){
+  if(!ev.length){timeChart.data.labels=[];timeChart.data.datasets.forEach(d=>d.data=[]);timeChart.update();return;}
+  const times=ev.map(e=>new Date(e.CreationTime||0).getTime()).filter(t=>t>0);
+  const minT=Math.min(...times),maxT=Math.max(...times);
+  const slots=Math.min(Math.ceil((maxT-minT)/3600000)+1,48);
+  const labels=[],d0=[],d1=[],d2=[],d3=[];
+  for(let i=0;i<slots;i++){
+    const s=new Date(minT+i*3600000),e2=new Date(s.getTime()+3600000);
+    labels.push(s.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+    const sl=ev.filter(e=>{const t=new Date(e.CreationTime||0);return t>=s&&t<e2;});
+    d0.push(sl.filter(e=>e.Activity==='ViewReport').length);
+    d1.push(sl.filter(e=>e.Activity==='RefreshDataset').length);
+    d2.push(sl.filter(e=>e.Activity==='ConnectFromExternalApplication').length);
+    d3.push(sl.filter(e=>e.Activity!=='ViewReport'&&e.Activity!=='RefreshDataset'&&e.Activity!=='ConnectFromExternalApplication').length);
+  }
+  timeChart.data.labels=labels;
+  [d0,d1,d2,d3].forEach((d,i)=>timeChart.data.datasets[i].data=d);
+  timeChart.update();
+}
+
+function renderHourChart(ev){
+  const hours=Array(24).fill(0);
+  ev.forEach(e=>{const h=new Date(e.CreationTime||0).getHours();if(h>=0&&h<24)hours[h]++;});
+  hourChart.data.datasets[0].data=hours;hourChart.update();
+}
+
+function renderMethodChart(ev){
+  const counts={};
+  ev.forEach(e=>{
+    let m=e.ConsumptionMethod||'';
+    if(!m){const ua=e.UserAgent||'';
+      if(ua.includes('MSOLAP'))     m='Power BI Desktop';
+      else if(ua.includes('Excel')) m='Excel';
+      else if(ua.includes('Azure')) m='Azure Client';
+      else if(ua.includes('Mozil')) m='Web Browser';
+      else if(ua==='')              m='Sistema/API';
+      else                          m='Outro';}
+    counts[m]=(counts[m]||0)+1;
+  });
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  methodChart.data.labels=sorted.map(x=>x[0]);
+  methodChart.data.datasets[0].data=sorted.map(x=>x[1]);
+  methodChart.update();
+}
+
+function renderArtifactChart(ev){
+  const counts={};
+  ev.forEach(e=>{const k=e.ArtifactKind||e.ObjectType||'Outro';counts[k]=(counts[k]||0)+1;});
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  artifactChart.data.labels=sorted.map(x=>x[0]);
+  artifactChart.data.datasets[0].data=sorted.map(x=>x[1]);
+  artifactChart.update();
+}
+
+function topN(ev,keyFn,n=15){
+  const counts={};
+  ev.forEach(e=>{const k=keyFn(e);if(k)counts[k]=(counts[k]||0)+1;});
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,n);
+}
+
+function renderRankList(id,entries,color){
+  const el=document.getElementById(id);
+  if(!entries.length){el.innerHTML='<div class="empty" style="padding:12px">—</div>';return;}
+  const max=entries[0][1];
+  el.innerHTML=`<div class="rank-list">${entries.map(([label,val],i)=>`
+    <div class="rank-item">
+      <span class="rank-n">${i+1}</span>
+      <span class="rank-label" title="${label}">${label.length>30?label.substring(0,28)+'…':label}</span>
+      <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(val/max*100)}%;background:${color}"></div></div>
+      <span class="rank-val">${val}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderRankings(ev){
+  renderRankList('rankReports', topN(ev,e=>e.ReportName||e.ArtifactName||''),'#00d4ff');
+  renderRankList('rankDatasets',topN(ev,e=>e.DatasetName||''),'#ff6b35');
+  renderRankList('rankUsers',   topN(ev,e=>e.UserId||e.UserName||''),'#00ff9f');
+  renderRankList('rankWs',      topN(ev,e=>e.WorkSpaceName||e.WorkspaceName||''),'#a855f7');
+  renderRankList('rankFails',   topN(ev.filter(e=>e.IsSuccess===false),e=>e.Activity||'',10),'#ef4444');
+  renderRankList('rankExternal',topN(ev.filter(e=>e.Activity==='ConnectFromExternalApplication'),e=>e.AppName||e.UserAgent||'App desconhecida',10),'#00ff9f');
+}
+
+function opBadge(op){
+  op=op||'';
+  if(op==='ViewReport')                    return `<span class="badge b-view">Ver</span>`;
+  if(op==='RefreshDataset')                return `<span class="badge b-refresh">Refresh</span>`;
+  if(op.toLowerCase().includes('export'))  return `<span class="badge b-export">Export</span>`;
+  if(op==='ConnectFromExternalApplication')return `<span class="badge b-connect">Externo</span>`;
+  return `<span class="badge b-other">${op.length>16?op.substring(0,14)+'…':op}</span>`;
+}
+
+function renderTable(ev){
+  const tbl=document.getElementById('tbl');
+  if(!ev.length){tbl.innerHTML='<div class="empty">Sem eventos com os filtros actuais</div>';return;}
+  const sorted=[...ev].sort((a,b)=>{
+    let va=a[_sortCol]||'',vb=b[_sortCol]||'';
+    if(_sortCol==='CreationTime'){va=new Date(va);vb=new Date(vb);}
+    if(va<vb) return _sortAsc?-1:1;
+    if(va>vb) return _sortAsc?1:-1;
+    return 0;
+  });
+  const sa=col=>col===_sortCol?(_sortAsc?' ↑':' ↓'):'';
+  tbl.innerHTML=`<table>
+    <thead><tr>
+      <th onclick="sortBy('CreationTime')">Hora${sa('CreationTime')}</th>
+      <th onclick="sortBy('Activity')">Operação${sa('Activity')}</th>
+      <th onclick="sortBy('UserId')">Utilizador${sa('UserId')}</th>
+      <th onclick="sortBy('ReportName')">Item${sa('ReportName')}</th>
+      <th onclick="sortBy('WorkSpaceName')">Workspace${sa('WorkSpaceName')}</th>
+      <th onclick="sortBy('ConsumptionMethod')">Método${sa('ConsumptionMethod')}</th>
+      <th onclick="sortBy('ClientIP')">IP${sa('ClientIP')}</th>
+      <th onclick="sortBy('IsSuccess')">Estado${sa('IsSuccess')}</th>
+    </tr></thead>
+    <tbody>${sorted.slice(0,500).map(e=>{
+      const ts  =e.CreationTime?new Date(e.CreationTime).toLocaleString('pt-PT'):'—';
+      const op  =e.Activity||e.OperationName||'—';
+      const user=e.UserId||e.UserName||'—';
+      const item=e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||'—';
+      const ws  =e.WorkSpaceName||e.WorkspaceName||'—';
+      const met =e.ConsumptionMethod||(e.UserAgent?.includes('MSOLAP')?'Desktop':e.UserAgent?.includes('AzureClient')?'Azure Client':'—');
+      const ip  =e.ClientIP||'—';
+      const ok  =e.IsSuccess!==false;
+      return `<tr>
+        <td style="font-size:10px">${ts}</td>
+        <td>${opBadge(op)}</td>
+        <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${user}</td>
+        <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${item}">${item}</td>
+        <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${ws}</td>
+        <td style="font-size:10px;color:var(--dim)">${met}</td>
+        <td style="font-size:10px;color:var(--dim)">${ip}</td>
+        <td>${ok?'<span style="color:var(--success)">✓</span>':'<span style="color:var(--danger)">✗ Falhou</span>'}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>
+  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} eventos</div>`:''}`;
+}
+
+function sortBy(col){
+  if(_sortCol===col) _sortAsc=!_sortAsc; else{_sortCol=col;_sortAsc=false;}
+  applyFilters();
+}
+
+
+// ── Drill-down ────────────────────────────────────────────────────────
+let _drillTp   = null;
+let _drillMode = 'interactive';
+let _drillCache = {};        // keyed by "tp|mode" — persists across tab switches
+let _drillFilters = {};      // { field: Set of selected values }
+
+function onChartClick(idx) {
+  if (!_capData || !_capData[idx]) return;
+  const step  = _capData.length > 500 ? Math.ceil(_capData.length/500) : 1;
+  const actual = idx * step;
+  const point  = _capData[Math.min(actual, _capData.length-1)];
+  if (!point) return;
+  openDrill(point.timepoint);
+}
+
+function openDrill(tp) {
+  _drillTp      = tp;
+  _drillCache   = {};   // clear cache only when opening a NEW timepoint
+  _drillFilters = {};
+  document.getElementById('drillTp').textContent = new Date(tp).toLocaleString('pt-PT');
+  document.getElementById('drillOverlay').classList.add('open');
+  // Reset to interactive tab when opening new timepoint
+  _drillMode = 'interactive';
+  switchDrillTab('interactive');
+}
+
+function closeDrillPanel() {
+  document.getElementById('drillOverlay').classList.remove('open');
+}
+
+function closeDrill(evt) {
+  if (evt.target === document.getElementById('drillOverlay')) closeDrillPanel();
+}
+
+function switchDrillTab(mode) {
+  _drillMode = mode;
+  document.querySelectorAll('.drill-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('dtab-'+(mode==='interactive'?'int':'bg')).classList.add('active');
+  document.getElementById('drillTitle').textContent =
+    mode === 'interactive' ? '⚡ Operações Interactive' : '⏱ Operações Background';
+  loadDrillData(mode);
+}
+
+async function loadDrillData(mode) {
+  const body     = document.getElementById('drillBody');
+  const cacheKey = _drillTp + '|' + mode;
+
+  if (_drillCache[cacheKey]) {
+    // Data already loaded — just re-render with current filters/grouping
+    buildFilterUI(_drillCache[cacheKey], mode);
+    applyDrillFilters(mode);
+    return;
+  }
+
+  body.innerHTML = '<div class="drill-spin"><span class="spin"></span> A carregar operações...</div>';
+
+  try {
+    const data = await api('/api/timepoint', { timepoint: _drillTp, mode });
+    _drillCache[cacheKey] = data.rows || [];
+    _drillFilters = {};   // reset filters for new data
+    buildFilterUI(_drillCache[cacheKey], mode);
+    applyDrillFilters(mode);
+  } catch(e) {
+    body.innerHTML = `<div class="drill-empty">Erro: ${e.message}</div>`;
+  }
+}
+
+// Build filter pills from actual data values
+function buildFilterUI(rows, mode) {
+  const row = document.getElementById('drillFilterRow');
+  if (!rows.length) { row.innerHTML = '<span class="dim-label">Filtrar:</span><span style="font-size:10px;color:var(--dim)">Sem dados</span>'; return; }
+
+  // Build unique values per field
+  const fields = ALL_DIMS;
+  let html = '<span class="dim-label">Filtrar:</span>';
+
+  fields.forEach(field => {
+    const vals = [...new Set(rows.map(r => r[field]||'—').filter(v=>v&&v!=='—'))].sort();
+    if (!vals.length) return;
+    if (!_drillFilters[field]) _drillFilters[field] = new Set();
+
+    html += `<div style="position:relative;display:inline-block">
+      <button class="flt-pill${_drillFilters[field].size>0?' active':''}" onclick="toggleFilterDropdown('fdd-${field}')" id="fpill-${field}">
+        ${DIM_LABELS[field]}${_drillFilters[field].size>0?` <span style="background:var(--warn);color:#000;border-radius:10px;font-size:9px;padding:0 5px;margin-left:3px">${_drillFilters[field].size}</span>`:''}
+      </button>
+      <div id="fdd-${field}" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:500;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.6)">
+        <input type="text" placeholder="Pesquisar..." onInput="filterFdd('fdd-${field}', this.value)"
+          style="width:100%;background:var(--surface2);border:none;border-bottom:1px solid var(--border);padding:7px 10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none">
+        <div style="max-height:180px;overflow-y:auto">
+          ${vals.map(v=>`<div class="ms-item${_drillFilters[field].has(v)?' checked':''}" onclick="toggleFlt('${field}','${v.replace(/'/g,"\'")}','${mode}')" data-val="${v.replace(/"/g,'&quot;')}">
+            <input type="checkbox" ${_drillFilters[field].has(v)?'checked':''} onclick="event.stopPropagation()">
+            <span class="ms-item-text" title="${v}">${v}</span>
+          </div>`).join('')}
+        </div>
+        <div class="ms-footer">
+          <button onclick="clearFld('${field}','${mode}')">Limpar</button>
+          <button onclick="toggleFilterDropdown('fdd-${field}')">Fechar</button>
+        </div>
+      </div>
+    </div>`;
+  });
+
+  if (Object.values(_drillFilters).some(s=>s.size>0)) {
+    html += `<button class="flt-clear" onclick="clearAllFlt('${mode}')">✕ Limpar tudo</button>`;
+  }
+
+  row.innerHTML = html;
+}
+
+function filterFdd(ddId, q) {
+  document.querySelectorAll(`#${ddId} .ms-item`).forEach(item => {
+    item.style.display = item.dataset.val.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+
+function toggleFilterDropdown(id) {
+  // Close others
+  document.querySelectorAll('[id^="fdd-"]').forEach(dd => {
+    if (dd.id !== id) dd.style.display = 'none';
+  });
+  const dd = document.getElementById(id);
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('[id^="fdd-"]') && !e.target.closest('.flt-pill')) {
+    document.querySelectorAll('[id^="fdd-"]').forEach(dd => dd.style.display = 'none');
+  }
+  if (!e.target.closest('.ms-dropdown') && !e.target.closest('.ms-btn')) {
+    document.querySelectorAll('.ms-dropdown.open').forEach(dd => {
+      dd.classList.remove('open'); dd.previousElementSibling?.classList.remove('open');
+    });
+  }
+});
+
+function toggleFlt(field, val, mode) {
+  if (!_drillFilters[field]) _drillFilters[field] = new Set();
+  if (_drillFilters[field].has(val)) _drillFilters[field].delete(val);
+  else _drillFilters[field].add(val);
+  const cacheKey = _drillTp + '|' + mode;
+  buildFilterUI(_drillCache[cacheKey]||[], mode);
+  applyDrillFilters(mode);
+}
+
+function clearFld(field, mode) {
+  if (_drillFilters[field]) _drillFilters[field].clear();
+  const cacheKey = _drillTp + '|' + mode;
+  buildFilterUI(_drillCache[cacheKey]||[], mode);
+  applyDrillFilters(mode);
+}
+
+function clearAllFlt(mode) {
+  Object.keys(_drillFilters).forEach(k => _drillFilters[k].clear());
+  const cacheKey = _drillTp + '|' + mode;
+  buildFilterUI(_drillCache[cacheKey]||[], mode);
+  applyDrillFilters(mode);
+}
+
+function applyDrillFilters(mode) {
+  const cacheKey = _drillTp + '|' + mode;
+  let rows = _drillCache[cacheKey] || [];
+
+  // Apply each active filter
+  Object.entries(_drillFilters).forEach(([field, vals]) => {
+    if (vals.size > 0) rows = rows.filter(r => vals.has(r[field]||'—'));
+  });
+
+  renderDrillTable(rows, mode);
+}
+
+// Dimension state
+const ALL_DIMS = ['operation','user','item','workspace','item_kind','status','billing_type'];
+const DIM_LABELS = {
+  operation:'Operação', user:'Utilizador', item:'Item',
+  workspace:'Workspace', item_kind:'Tipo', status:'Estado', billing_type:'Billing Type'
+};
+let _activeDims = new Set(['operation']);
+let _lastRows   = [];
+let _lastMode   = 'interactive';
+
+function toggleDim(dim) {
+  if (_activeDims.has(dim)) {
+    if (_activeDims.size === 1) return; // keep at least one
+    _activeDims.delete(dim);
+  } else {
+    _activeDims.add(dim);
+  }
+  // Update pills UI
+  document.querySelectorAll('.dim-pill').forEach((pill, i) => {
+    const d = ALL_DIMS[i];
+    pill.classList.toggle('active', _activeDims.has(d));
+  });
+  renderDrillTable(_lastRows, _lastMode);
+}
+
+function groupRows(rows, dims) {
+  const map = new Map();
+  for (const r of rows) {
+    const key = [...dims].map(d => r[d] || '—').join('|§|');
+    if (!map.has(key)) {
+      const entry = { _key: key };
+      dims.forEach(d => entry[d] = r[d] || '—');
+      entry.total_cu    = 0;
+      entry.timepoint_cu = 0;
+      entry.duration    = 0;
+      entry.pct_capacity = 0;
+      entry._count      = 0;
+      map.set(key, entry);
+    }
+    const e = map.get(key);
+    e.total_cu     += r.total_cu     || 0;
+    e.timepoint_cu += r.timepoint_cu || 0;
+    e.duration     += r.duration     || 0;
+    e.pct_capacity += r.pct_capacity || 0;
+    e._count++;
+  }
+  return [...map.values()].sort((a,b) => b.total_cu - a.total_cu);
+}
+
+function renderDrillTable(rows, mode) {
+  _lastRows = rows;
+  _lastMode = mode;
+  const body = document.getElementById('drillBody');
+
+  if (!rows.length) {
+    body.innerHTML = '<div class="drill-empty">Sem operações para este timepoint</div>';
+    return;
+  }
+
+  const dims    = [..._activeDims];
+  const grouped = groupRows(rows, dims);
+  const maxCu   = grouped[0]?.total_cu || 1;
+  const color   = mode === 'interactive' ? '#00ff9f' : '#ff6b35';
+
+  const cuBar = v => {
+    const w = Math.round(v/maxCu*100);
+    return `<div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:10px;min-width:48px;text-align:right">${v.toFixed(2)}s</span>
+      <div style="flex:1;background:var(--surface2);border-radius:3px;height:5px;min-width:60px">
+        <div style="width:${w}%;height:100%;border-radius:3px;background:${color}"></div>
+      </div>
+    </div>`;
+  };
+
+  const dimHeaders = dims.map(d => `<th>${DIM_LABELS[d]}</th>`).join('');
+  const totCu  = grouped.reduce((s,r)=>s+r.total_cu,0);
+  const totTp  = grouped.reduce((s,r)=>s+r.timepoint_cu,0);
+  const totDur = grouped.reduce((s,r)=>s+r.duration,0);
+  const totPct = grouped.reduce((s,r)=>s+r.pct_capacity,0)*100;
+  const metricCards = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:14px">
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid ${color}">
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Total CU (s)</div>
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:${color}">${totCu.toFixed(2)}s</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:2px">${grouped.length} grupos</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--cu)">
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">TP CU (s)</div>
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--cu)">${totTp.toFixed(2)}s</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:2px">timepoint</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--purple)">
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Duração (s)</div>
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--purple)">${totDur.toFixed(1)}s</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:2px">total</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--warn)">
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">% Capacidade</div>
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--warn)">${totPct.toFixed(2)}%</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:2px">soma</div>
+    </div>
+  </div>`;
+
+  body.innerHTML = `
+    <div class="hint-click" style="text-align:left;padding:4px 0 12px">
+      💡 ${rows.length} operações → ${grouped.length} grupos por: <strong style="color:var(--cu)">${dims.map(d=>DIM_LABELS[d]).join(' + ')}</strong>
+    </div>
+    ${metricCards}
+    <div style="overflow-x:auto">
+    <table class="drill-table">
+      <thead><tr>
+        ${dimHeaders}
+        <th>Total CU (s)</th>
+        <th>TP CU (s)</th>
+        <th>Duração (s)</th>
+        <th>% Capacidade</th>
+      </tr></thead>
+      <tbody>
+        ${grouped.map(r => `<tr>
+          ${dims.map(d => `<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;${d==='operation'?'color:var(--cu)':d==='user'||d==='workspace'?'color:var(--dim)':''}" title="${r[d]}">${r[d]}</td>`).join('')}
+          <td>${cuBar(r.total_cu)}</td>
+          <td style="font-size:10px;color:var(--dim)">${r.timepoint_cu.toFixed(2)}s</td>
+          <td style="font-size:10px;color:var(--dim)">${r.duration.toFixed(1)}s</td>
+          <td style="font-size:10px;color:var(--warn)">${(r.pct_capacity*100).toFixed(2)}%</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+}
+
+
+// ── REFRESHES ─────────────────────────────────────────────────────────
+let _refAll = [];
+let _refSort = 'daily_load_min';
+let _refSortAsc = false;
+let refHourChart, refStatusChart, refDurChart;
+
+function initRefCharts(){
+  const gc='rgba(30,45,69,0.5)',tk={color:'#64748b',font:{family:'JetBrains Mono',size:9}};
+  refHourChart = new Chart(document.getElementById('refHourChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:[...Array(24)].map((_,i)=>String(i).padStart(2,'0')+'h'),
+          datasets:[{label:'Refreshes configurados',data:Array(24).fill(0),backgroundColor:'rgba(0,212,255,0.5)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:tk,grid:{color:gc}},y:{ticks:tk,grid:{color:gc},beginAtZero:true}}}
+  });
+  refStatusChart = new Chart(document.getElementById('refStatusChart').getContext('2d'),{
+    type:'doughnut',
+    data:{labels:[],datasets:[{data:[],backgroundColor:['#22c55e','#ef4444','#64748b'],borderColor:'#111827',borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
+      plugins:{legend:{position:'bottom',labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8,padding:6}}}}
+  });
+  refDurChart = new Chart(document.getElementById('refDurChart').getContext('2d'),{
+    type:'bar',
+    data:{labels:['<0.5min','0.5-1min','1-5min','5-15min','15-30min','>30min'],
+          datasets:[{label:'Datasets',data:Array(6).fill(0),backgroundColor:'rgba(168,85,247,0.5)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:tk,grid:{color:gc}},y:{ticks:tk,grid:{color:gc},beginAtZero:true}}}
+  });
+}
+
+async function loadRefreshes(){
+  const btn = document.getElementById('btnRef');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>A carregar...';
+  try {
+    const data = await api('/api/refreshes', {});
+    _refAll = data.datasets || [];
+    document.getElementById('refInfo').style.display='flex';
+    document.getElementById('refCount').textContent = _refAll.length.toLocaleString();
+    document.getElementById('refTime').textContent  = 'às '+new Date().toLocaleTimeString('pt-PT');
+    // Build filter dropdowns
+    buildRefFilters();
+    applyRefFilters();
+  } catch(e) {
+    alert('Erro: '+e.message);
+  }
+  btn.disabled=false; btn.innerHTML='↻ Carregar Refreshes';
+}
+
+function buildRefFilters(){
+  const wss = [...new Set(_refAll.map(r=>r.configured_by||'').filter(Boolean))].sort();
+  // Use workspace from name prefix heuristic — actually use configured_by as "owner"
+  // Build workspace list from dataset names — we don't have workspace directly in this API
+  // Use configuredBy as owner filter, dataset name for dataset filter
+  const owners = [...new Set(_refAll.map(r=>r.configured_by||'').filter(Boolean))].sort();
+  const names  = [...new Set(_refAll.map(r=>r.name||'').filter(Boolean))].sort();
+  buildMultiSelect('ms-rWs', owners);
+  buildMultiSelect('ms-rDs', names);
+}
+
+function applyRefFilters(){
+  if(!_refAll.length) return;
+  const selOwner = _msState['rWs'] || new Set();
+  const selDs    = _msState['rDs'] || new Set();
+  const sched    = document.getElementById('rSched').value;
+  const status   = document.getElementById('rStatus').value;
+
+  let filtered = _refAll.filter(r => {
+    if(selOwner.size>0 && !selOwner.has(r.configured_by||'')) return false;
+    if(selDs.size>0    && !selDs.has(r.name||''))              return false;
+    if(sched==='enabled'  && !r.schedule_enabled)              return false;
+    if(sched==='disabled' && (r.schedule_enabled || !r.schedule_days)) return false;
+    if(sched==='none'     && r.schedule_days)                  return false;
+    if(status && r.last_status !== status)                     return false;
+    return true;
+  });
+
+  renderRefKPIs(filtered);
+  renderRefCharts(filtered);
+  renderRefRankings(filtered);
+  renderRefTable(filtered);
+}
+
+function clearRefFilters(){
+  ['rWs','rDs'].forEach(id => { if(_msState[id]) _msState[id].clear(); buildMultiSelect('ms-'+id, []); });
+  buildRefFilters();
+  document.getElementById('rSched').value='';
+  document.getElementById('rStatus').value='';
+  applyRefFilters();
+}
+
+function renderRefKPIs(data){
+  const active   = data.filter(r=>r.schedule_enabled).length;
+  const total_rf = data.reduce((s,r)=>s+(r.refresh_count||0),0);
+  const total_fl = data.reduce((s,r)=>s+(r.refresh_failures||0),0);
+  const loads    = data.filter(r=>r.daily_load_min!=null).map(r=>r.daily_load_min);
+  const total_ld = loads.reduce((s,v)=>s+v,0);
+  const durs     = data.filter(r=>r.average_duration!=null).map(r=>r.average_duration);
+  const avg_dur  = durs.length ? (durs.reduce((s,v)=>s+v,0)/durs.length).toFixed(2) : '—';
+
+  document.getElementById('rk1').textContent = data.length.toLocaleString();
+  document.getElementById('rk2').textContent = active.toLocaleString();
+  document.getElementById('rk3').textContent = total_rf.toLocaleString();
+  document.getElementById('rk4').textContent = total_fl.toLocaleString();
+  document.getElementById('rk5').textContent = total_ld.toFixed(1)+'min';
+  document.getElementById('rk6').textContent = avg_dur !== '—' ? avg_dur+'min' : '—';
+  document.getElementById('refTcount').textContent = data.length+' datasets';
+}
+
+function renderRefCharts(data){
+  // Hour distribution from schedule times
+  const hours = Array(24).fill(0);
+  data.forEach(r => {
+    (r.schedule_times||'').split(',').forEach(t => {
+      const h = parseInt((t||'').trim().split(':')[0]);
+      if(!isNaN(h) && h>=0 && h<24) hours[h]++;
+    });
+  });
+  refHourChart.data.datasets[0].data = hours;
+  refHourChart.update();
+
+  // Status donut
+  const completed = data.filter(r=>r.last_status==='Completed').length;
+  const failed    = data.filter(r=>r.last_status==='Failed').length;
+  const unknown   = data.filter(r=>!r.last_status||r.last_status==='Unknown'||r.last_status==='').length;
+  refStatusChart.data.labels = ['Completed','Failed','Unknown'];
+  refStatusChart.data.datasets[0].data = [completed, failed, unknown];
+  refStatusChart.update();
+
+  // Duration distribution
+  const buckets = [0,0,0,0,0,0];
+  data.forEach(r => {
+    const d = r.average_duration;
+    if(d==null) return;
+    if(d<0.5)       buckets[0]++;
+    else if(d<1)    buckets[1]++;
+    else if(d<5)    buckets[2]++;
+    else if(d<15)   buckets[3]++;
+    else if(d<30)   buckets[4]++;
+    else            buckets[5]++;
+  });
+  refDurChart.data.datasets[0].data = buckets;
+  refDurChart.update();
+}
+
+function renderRefRankings(data){
+  const topLoad  = [...data].filter(r=>r.daily_load_min!=null).sort((a,b)=>b.daily_load_min-a.daily_load_min).slice(0,15);
+  const topCount = [...data].filter(r=>r.refresh_count>0).sort((a,b)=>b.refresh_count-a.refresh_count).slice(0,15);
+  const topFail  = [...data].filter(r=>r.refresh_failures>0).sort((a,b)=>b.refresh_failures-a.refresh_failures).slice(0,15);
+  const topDur   = [...data].filter(r=>r.average_duration!=null).sort((a,b)=>b.average_duration-a.average_duration).slice(0,15);
+
+  const renderRR = (id, items, valFn, color, fmtFn) => {
+    const el = document.getElementById(id);
+    if(!items.length){el.innerHTML='<div class="empty" style="padding:12px">—</div>';return;}
+    const max = valFn(items[0]);
+    el.innerHTML = `<div class="rank-list">${items.map((r,i)=>`
+      <div class="rank-item">
+        <span class="rank-n">${i+1}</span>
+        <span class="rank-label" title="${r.name}">${r.name.length>28?r.name.substring(0,26)+'…':r.name}</span>
+        <div class="rank-bar-wrap"><div class="rank-bar" style="width:${Math.round(valFn(r)/max*100)}%;background:${color}"></div></div>
+        <span class="rank-val">${fmtFn(valFn(r))}</span>
+      </div>`).join('')}</div>`;
+  };
+
+  renderRR('rrLoad',  topLoad,  r=>r.daily_load_min,    '#f59e0b', v=>v.toFixed(1)+'m');
+  renderRR('rrCount', topCount, r=>r.refresh_count,     '#00d4ff', v=>v+'x');
+  renderRR('rrFail',  topFail,  r=>r.refresh_failures,  '#ef4444', v=>v+'x');
+  renderRR('rrDur',   topDur,   r=>r.average_duration,  '#a855f7', v=>v.toFixed(2)+'m');
+}
+
+function renderRefTable(data){
+  const tbl = document.getElementById('refTbl');
+  if(!data.length){tbl.innerHTML='<div class="empty">Sem dados</div>';return;}
+
+  const sorted = [...data].sort((a,b)=>{
+    let va=a[_refSort]??-1, vb=b[_refSort]??-1;
+    if(typeof va==='string') va=va.toLowerCase();
+    if(typeof vb==='string') vb=vb.toLowerCase();
+    if(va<vb) return _refSortAsc?-1:1;
+    if(va>vb) return _refSortAsc?1:-1;
+    return 0;
+  });
+  const sa = col => col===_refSort?(_refSortAsc?' ↑':' ↓'):'';
+
+  const statusBadge = s => {
+    if(!s||s==='') return '<span style="color:var(--dim);font-size:10px">—</span>';
+    if(s==='Completed') return '<span style="color:var(--success);font-size:10px">✓ OK</span>';
+    if(s==='Failed')    return '<span style="color:var(--danger);font-size:10px">✗ Falhou</span>';
+    return `<span style="color:var(--dim);font-size:10px">${s}</span>`;
+  };
+
+  const schedBadge = r => {
+    if(r.schedule_enabled) return '<span style="background:rgba(0,212,255,.1);color:var(--cu);padding:2px 6px;border-radius:3px;font-size:9px">ACTIVO</span>';
+    if(r.schedule_days)    return '<span style="background:rgba(100,116,139,.1);color:var(--dim);padding:2px 6px;border-radius:3px;font-size:9px">INACTIVO</span>';
+    return '<span style="color:var(--dim);font-size:10px">—</span>';
+  };
+
+  tbl.innerHTML = `<table>
+    <thead><tr>
+      <th onclick="refSortBy('name')">Dataset${sa('name')}</th>
+      <th onclick="refSortBy('configured_by')">Configurado por${sa('configured_by')}</th>
+      <th onclick="refSortBy('schedule_enabled')">Schedule${sa('schedule_enabled')}</th>
+      <th onclick="refSortBy('refreshes_per_day')">Ref/Dia${sa('refreshes_per_day')}</th>
+      <th onclick="refSortBy('schedule_times')">Horários${sa('schedule_times')}</th>
+      <th onclick="refSortBy('schedule_days')">Dias${sa('schedule_days')}</th>
+      <th onclick="refSortBy('average_duration')">Dur. Média${sa('average_duration')}</th>
+      <th onclick="refSortBy('daily_load_min')">Carga/Dia${sa('daily_load_min')}</th>
+      <th onclick="refSortBy('refresh_count')">Total Ref.${sa('refresh_count')}</th>
+      <th onclick="refSortBy('refresh_failures')">Falhas${sa('refresh_failures')}</th>
+      <th onclick="refSortBy('last_status')">Último Estado${sa('last_status')}</th>
+      <th onclick="refSortBy('last_end')">Último Refresh${sa('last_end')}</th>
+    </tr></thead>
+    <tbody>${sorted.slice(0,500).map(r=>`<tr>
+      <td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cu)" title="${r.name}">${r.name}</td>
+      <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${r.configured_by||'—'}</td>
+      <td>${schedBadge(r)}</td>
+      <td style="font-size:10px;text-align:center">${r.refreshes_per_day||'—'}</td>
+      <td style="font-size:10px;color:var(--dim)">${r.schedule_times||'—'}</td>
+      <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${r.schedule_days||'—'}</td>
+      <td style="font-size:10px;${r.average_duration>5?'color:var(--warn)':''}">${r.average_duration!=null?r.average_duration.toFixed(2)+'min':'—'}</td>
+      <td style="font-size:10px;${r.daily_load_min>30?'color:var(--danger)':r.daily_load_min>10?'color:var(--warn)':''};font-weight:600">${r.daily_load_min!=null?r.daily_load_min.toFixed(1)+'min':'—'}</td>
+      <td style="font-size:10px;text-align:center">${r.refresh_count||0}</td>
+      <td style="font-size:10px;text-align:center;${r.refresh_failures>0?'color:var(--danger)':''}">${r.refresh_failures||0}</td>
+      <td>${statusBadge(r.last_status)}</td>
+      <td style="font-size:10px;color:var(--dim)">${r.last_end?new Date(r.last_end).toLocaleString('pt-PT'):'—'}</td>
+    </tr>`).join('')}</tbody>
+  </table>
+  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} datasets</div>`:''}`;
+}
+
+function refSortBy(col){
+  if(_refSort===col) _refSortAsc=!_refSortAsc; else{_refSort=col;_refSortAsc=false;}
+  const cacheKey = 'ref_filtered';
+  applyRefFilters();
+}
+
+initCharts();
+initRefCharts();
+checkProxy();
+</script>
+</body>
+</html>"""
+
+
+# ── Handler ───────────────────────────────────────────────────────────
+class Handler(BaseHTTPRequestHandler):
+
+    def log_message(self, fmt, *args):
+        print(f"  {fmt % args}")
+
+    def send_json(self, status, data):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            body = HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        length  = int(self.headers.get("Content-Length", 0))
+        payload = json.loads(self.rfile.read(length)) if length else {}
+        try:
+            if   self.path == "/api/ping":         self.send_json(200, {"status": "ok"})
+            elif self.path == "/api/auth_status":  self._auth_status()
+            elif self.path == "/api/activity":     self._handle_activity(payload)
+            elif self.path == "/api/capacity":     self._handle_capacity(payload)
+            elif self.path == "/api/timepoint":    self._handle_timepoint(payload)
+            elif self.path == "/api/refreshes":     self._handle_refreshes(payload)
+            else:                                  self.send_json(404, {"error": "Endpoint desconhecido"})
+        except Exception as e:
+            print(f"  ERRO: {e}")
+            self.send_json(500, {"error": str(e)})
+
+    def _auth_status(self):
+        accounts = get_app().get_accounts()
+        if accounts:
+            self.send_json(200, {"authenticated": True, "account": accounts[0].get("username", "")})
+        else:
+            self.send_json(200, {"authenticated": False, "account": ""})
+
+    def _handle_activity(self, payload):
+        token = get_token()
+
+        start_str = payload.get("start")
+        end_str   = payload.get("end")
+
+        start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00")) if start_str else datetime.now(timezone.utc) - timedelta(hours=1)
+        end_dt   = datetime.fromisoformat(end_str.replace("Z",   "+00:00")) if end_str   else datetime.now(timezone.utc)
+
+        fmt = lambda d: d.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        all_events = []
+        cursor = start_dt
+
+        while cursor < end_dt:
+            end_of_day = cursor.replace(hour=23, minute=59, second=59, microsecond=0)
+            chunk_end  = min(end_dt, cursor + timedelta(hours=1), end_of_day)
+
+            s = fmt(cursor)
+            e = fmt(chunk_end)
+            url = (f"https://api.powerbi.com/v1.0/myorg/admin/activityevents"
+                   f"?startDateTime=%27{s}%27&endDateTime=%27{e}%27")
+
+            print(f"  Chunk: {s} → {e}")
+
+            while url:
+                status, data = call_api(url, token)
+                if status != 200:
+                    err = data.get("error", data.get("message", str(data)))
+                    raise Exception(f"Activity API erro {status}: {err}")
+                events = data.get("activityEventEntities", [])
+                all_events.extend(events)
+                url = data.get("continuationUri") or data.get("@odata.nextLink")
+
+            cursor = chunk_end if chunk_end < end_of_day else chunk_end + timedelta(seconds=1)
+
+        print(f"  Activity API: {len(all_events)} eventos carregados")
+        self.send_json(200, {"activityEventEntities": all_events})
+
+
+    def _handle_capacity(self, payload):
+        token = get_token()
+        hours = int(payload.get("hours", 1))
+
+        now  = datetime.now(timezone.utc)
+        frm  = now - timedelta(hours=hours)
+
+        # Build DATE() arguments — compatible with Windows (no %-m)
+        sy, sm, sd = frm.year, frm.month, frm.day
+        ey, em, ed = (now + timedelta(days=1)).year, (now + timedelta(days=1)).month, (now + timedelta(days=1)).day
+
+        cap_id = CAPACITY_ID
+
+        dax = """EVALUATE SUMMARIZECOLUMNS(
+    'Timepoints'[Timepoint],
+    TREATAS({"CAP_ID_PLACEHOLDER"}, 'Capacities'[Capacity Id]),
+    FILTER(
+        KEEPFILTERS(VALUES('Dates'[Date])),
+        'Dates'[Date] >= DATE(SY, SM, SD) && 'Dates'[Date] <= DATE(EY, EM, ED)
+    ),
+    "Interactive",    'All Measures'[Interactive billable CU %],
+    "Background",     'All Measures'[Background billable CU %],
+    "Interactive_nb", 'All Measures'[Interactive non billable CU %],
+    "Background_nb",  'All Measures'[Background non billable CU %],
+    "SKU_CU",         'All Measures'[SKU CU by timepoint %],
+    "CU_limit",       'All Measures'[CU limit]
+)
+ORDER BY 'Timepoints'[Timepoint] ASC"""
+
+        dax = (dax
+            .replace("CAP_ID_PLACEHOLDER", cap_id)
+            .replace("SY", str(sy)).replace("SM", str(sm)).replace("SD", str(sd))
+            .replace("EY", str(ey)).replace("EM", str(em)).replace("ED", str(ed))
+        )
+
+        url  = f"https://api.powerbi.com/v1.0/myorg/groups/{METRICS_WS}/datasets/{METRICS_DS}/executeQueries"
+        body = json.dumps({
+            "queries": [{"query": dax}],
+            "serializerSettings": {"includeNulls": True}
+        }).encode()
+
+        headers = {
+            "Authorization": "Bearer " + token,
+            "Content-Type":  "application/json"
+        }
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req) as r:
+                data = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            err = e.read().decode(errors="replace")
+            raise Exception(f"Capacity API erro {e.code}: {err}")
+
+        rows = []
+        try:
+            raw_rows = data["results"][0]["tables"][0]["rows"]
+            # Filter to requested time window
+            frm_str = frm.strftime("%Y-%m-%dT%H:%M:%S")
+            for row in raw_rows:
+                tp = row.get("Timepoints[Timepoint]", "")
+                if tp >= frm_str:
+                    rows.append({
+                        "timepoint":       tp,
+                        "interactive":     row.get("[Interactive]", 0) or 0,
+                        "background":      row.get("[Background]", 0) or 0,
+                        "interactive_nb":  row.get("[Interactive_nb]", 0) or 0,
+                        "background_nb":   row.get("[Background_nb]", 0) or 0,
+                        "sku_cu":          row.get("[SKU_CU]", 0) or 0,
+                        "cu_limit":        row.get("[CU_limit]", 0) or 0,
+                    })
+        except (KeyError, IndexError) as ex:
+            raise Exception(f"Erro ao processar resposta: {ex} | {str(data)[:300]}")
+
+        print(f"  Capacity: {len(rows)} timepoints carregados")
+        self.send_json(200, {"timepoints": rows})
+
+
+    def _handle_timepoint(self, payload):
+        """Drill-down detail for a specific timepoint — Interactive and Background."""
+        token = get_token()
+        tp    = payload.get("timepoint", "")  # e.g. "2026-04-19T23:58:30"
+        mode  = payload.get("mode", "interactive")  # "interactive" or "background"
+
+        if not tp:
+            raise Exception("timepoint em falta")
+
+        # Parse ISO timestamp
+        try:
+            dt = datetime.fromisoformat(tp)
+        except ValueError:
+            raise Exception(f"Formato de timepoint inválido: {tp}")
+
+        y, mo, d  = dt.year, dt.month, dt.day
+        h, mi, s  = dt.hour, dt.minute, dt.second
+        cap_id    = CAPACITY_ID
+
+        # Date filter: day before and day after
+        from datetime import date as _date
+        fd   = dt.date()
+        fd_y, fd_m, fd_d = fd.year, fd.month, fd.day
+        td   = (dt + timedelta(days=1)).date()
+        td_y, td_m, td_d = td.year, td.month, td.day
+
+        if mode == "background":
+            dax = """DEFINE
+	MPARAMETER 'TimePoint' = (DATE(TP_Y, TP_MO, TP_D) + TIME(TP_H, TP_MI, TP_S))
+	MPARAMETER 'CapacitiesList' = {"CAP_ID"}
+	VAR __DS0FilterTable = TREATAS(
+		{"'Timepoint Background Detail'[Billing type]","'Timepoint Background Detail'[Start]","'Timepoint Background Detail'[End]"},
+		'Timepoint detail page optional columns (background operations)'[DynamicColumnsTimepointBackgroundOperations Fields]
+	)
+	VAR __DS0FilterTable2 = TREATAS({(DATE(TP_Y, TP_MO, TP_D) + TIME(TP_H, TP_MI, TP_S))}, 'Timepoints'[Timepoint])
+	VAR __DS0FilterTable3 = TREATAS({"CAP_ID"}, 'Capacities'[Capacity Id])
+	VAR __DS0FilterTable4 = FILTER(KEEPFILTERS(VALUES('Dates'[Date])),
+		AND(AND(AND('Dates'[Date] >= DATE(FD_Y,FD_M,FD_D), 'Dates'[Date] < DATE(TD_Y,TD_M,TD_D)),
+		'Dates'[Date] >= DATE(2026, 4, 1)), 'Dates'[Date] < DATE(TD_Y,TD_M,TD_D)))
+	VAR __DS0Core = SUMMARIZECOLUMNS(
+		ROLLUPADDISSUBTOTAL(ROLLUPGROUP(
+			'Timepoint Background Detail'[Operation start time],
+			'Timepoint Background Detail'[Operation end time],
+			'Timepoint Background Detail'[Status],
+			'Timepoint Background Detail'[Operation],
+			'Timepoint Background Detail'[User],
+			'Items'[Workspace name],
+			'Items'[Item kind],
+			'Items'[Unique key],
+			'Timepoint Background Detail'[Billing type],
+			'Timepoint Background Detail'[Start],
+			'Timepoint Background Detail'[End],
+			'Items'[Item name]
+		), "IsGrandTotalRowTotal"),
+		__DS0FilterTable, __DS0FilterTable2, __DS0FilterTable3, __DS0FilterTable4,
+		"SumTotal_CU__s_",        CALCULATE(SUM('Timepoint Background Detail'[Total CU (s)])),
+		"SumDuration__s_",        CALCULATE(SUM('Timepoint Background Detail'[Duration (s)])),
+		"SumTimepoint_CU__s_",    CALCULATE(SUM('Timepoint Background Detail'[Timepoint CU (s)])),
+		"SumThrottling__s_",      CALCULATE(SUM('Timepoint Background Detail'[Throttling (s)])),
+		"Sumv__of_base_capacity", CALCULATE(SUM('Timepoint Background Detail'[% of base capacity]))
+	)
+	VAR __DS0PrimaryWindowed = TOPN(502, __DS0Core, [IsGrandTotalRowTotal], 0, [SumTotal_CU__s_], 0,
+		'Timepoint Background Detail'[Operation start time], 1,
+		'Timepoint Background Detail'[Operation end time], 1,
+		'Timepoint Background Detail'[Status], 1,
+		'Timepoint Background Detail'[Operation], 1,
+		'Timepoint Background Detail'[User], 1,
+		'Items'[Workspace name], 1,
+		'Items'[Item kind], 1,
+		'Items'[Item name], 1,
+		'Items'[Unique key], 1,
+		'Timepoint Background Detail'[Billing type], 1,
+		'Timepoint Background Detail'[Start], 1,
+		'Timepoint Background Detail'[End], 1
+	)
+EVALUATE __DS0PrimaryWindowed
+ORDER BY [IsGrandTotalRowTotal] DESC, [SumTotal_CU__s_] DESC,
+	'Timepoint Background Detail'[Operation start time],
+	'Timepoint Background Detail'[Operation], 'Timepoint Background Detail'[User],
+	'Items'[Workspace name], 'Items'[Item name]"""
+        else:
+            dax = """DEFINE
+	MPARAMETER 'TimePoint' = (DATE(TP_Y, TP_MO, TP_D) + TIME(TP_H, TP_MI, TP_S))
+	MPARAMETER 'CapacitiesList' = {"CAP_ID"}
+	VAR __DS0FilterTable = TREATAS(
+		{"'Timepoint Interactive Detail'[Billing type]"},
+		'Timepoint detail page optional columns (interactive operations)'[Interactive Operation optional columns  Fields]
+	)
+	VAR __DS0FilterTable2 = TREATAS({(DATE(TP_Y, TP_MO, TP_D) + TIME(TP_H, TP_MI, TP_S))}, 'Timepoints'[Timepoint])
+	VAR __DS0FilterTable3 = TREATAS({"CAP_ID"}, 'Capacities'[Capacity Id])
+	VAR __DS0FilterTable4 = FILTER(KEEPFILTERS(VALUES('Dates'[Date])),
+		AND(AND(AND('Dates'[Date] >= DATE(FD_Y,FD_M,FD_D), 'Dates'[Date] < DATE(TD_Y,TD_M,TD_D)),
+		'Dates'[Date] >= DATE(2026, 4, 1)), 'Dates'[Date] < DATE(TD_Y,TD_M,TD_D)))
+	VAR __DS0Core = SUMMARIZECOLUMNS(
+		ROLLUPADDISSUBTOTAL(ROLLUPGROUP(
+			'Timepoint Interactive Detail'[Operation start time],
+			'Timepoint Interactive Detail'[Operation end time],
+			'Timepoint Interactive Detail'[Status],
+			'Timepoint Interactive Detail'[Operation],
+			'Timepoint Interactive Detail'[User],
+			'Items'[Workspace name],
+			'Items'[Item kind],
+			'Items'[Unique key],
+			'Timepoint Interactive Detail'[Billing type],
+			'Items'[Item name]
+		), "IsGrandTotalRowTotal"),
+		__DS0FilterTable, __DS0FilterTable2, __DS0FilterTable3, __DS0FilterTable4,
+		"Sumv__of_base_capacity", CALCULATE(SUM('Timepoint Interactive Detail'[% of base capacity])),
+		"SumThrottling__s_",      CALCULATE(SUM('Timepoint Interactive Detail'[Throttling (s)])),
+		"SumDuration__s_",        CALCULATE(SUM('Timepoint Interactive Detail'[Duration (s)])),
+		"SumTimepoint_CU__s_",    CALCULATE(SUM('Timepoint Interactive Detail'[Timepoint CU (s)])),
+		"SumTotal_CU__s_",        CALCULATE(SUM('Timepoint Interactive Detail'[Total CU (s)]))
+	)
+	VAR __DS0PrimaryWindowed = TOPN(502, __DS0Core, [IsGrandTotalRowTotal], 0, [Sumv__of_base_capacity], 0,
+		'Timepoint Interactive Detail'[Billing type], 1,
+		'Timepoint Interactive Detail'[Operation start time], 1,
+		'Timepoint Interactive Detail'[Operation end time], 1,
+		'Timepoint Interactive Detail'[Status], 1,
+		'Timepoint Interactive Detail'[Operation], 1,
+		'Timepoint Interactive Detail'[User], 1,
+		'Items'[Workspace name], 1,
+		'Items'[Item kind], 1,
+		'Items'[Item name], 1,
+		'Items'[Unique key], 1
+	)
+EVALUATE __DS0PrimaryWindowed
+ORDER BY [IsGrandTotalRowTotal] DESC, [Sumv__of_base_capacity] DESC,
+	'Timepoint Interactive Detail'[Billing type],
+	'Timepoint Interactive Detail'[Operation start time],
+	'Timepoint Interactive Detail'[Operation], 'Timepoint Interactive Detail'[User],
+	'Items'[Workspace name], 'Items'[Item name]"""
+
+        # Replace placeholders
+        dax = (dax
+            .replace("TP_Y",  str(y)).replace("TP_MO", str(mo)).replace("TP_D",  str(d))
+            .replace("TP_H",  str(h)).replace("TP_MI", str(mi)).replace("TP_S",  str(s))
+            .replace("FD_Y",  str(fd_y)).replace("FD_M", str(fd_m)).replace("FD_D", str(fd_d))
+            .replace("TD_Y",  str(td_y)).replace("TD_M", str(td_m)).replace("TD_D", str(td_d))
+            .replace("CAP_ID", cap_id)
+        )
+
+        url  = f"https://api.powerbi.com/v1.0/myorg/groups/{METRICS_WS}/datasets/{METRICS_DS}/executeQueries"
+        body = json.dumps({
+            "queries": [{"query": dax}],
+            "serializerSettings": {"includeNulls": True}
+        }).encode()
+
+        headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+        req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req) as r:
+                data = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            raise Exception(f"Timepoint API erro {e.code}: {e.read().decode(errors='replace')}")
+
+        rows = []
+        try:
+            raw = data["results"][0]["tables"][0]["rows"]
+            for row in raw:
+                grand = row.get("[IsGrandTotalRowTotal]", False)
+                if grand:
+                    continue
+                if mode == "background":
+                    rows.append({
+                        "operation":    row.get("Timepoint Background Detail[Operation]", ""),
+                        "user":         row.get("Timepoint Background Detail[User]", ""),
+                        "workspace":    row.get("Items[Workspace name]", ""),
+                        "item":         row.get("Items[Item name]", ""),
+                        "item_kind":    row.get("Items[Item kind]", ""),
+                        "status":       row.get("Timepoint Background Detail[Status]", ""),
+                        "billing_type": row.get("Timepoint Background Detail[Billing type]", ""),
+                        "start":        row.get("Timepoint Background Detail[Operation start time]", ""),
+                        "end":          row.get("Timepoint Background Detail[Operation end time]", ""),
+                        "total_cu":     row.get("[SumTotal_CU__s_]", 0) or 0,
+                        "timepoint_cu": row.get("[SumTimepoint_CU__s_]", 0) or 0,
+                        "duration":     row.get("[SumDuration__s_]", 0) or 0,
+                        "throttling":   row.get("[SumThrottling__s_]", 0) or 0,
+                        "pct_capacity": row.get("[Sumv__of_base_capacity]", 0) or 0,
+                    })
+                else:
+                    rows.append({
+                        "operation":    row.get("Timepoint Interactive Detail[Operation]", ""),
+                        "user":         row.get("Timepoint Interactive Detail[User]", ""),
+                        "workspace":    row.get("Items[Workspace name]", ""),
+                        "item":         row.get("Items[Item name]", ""),
+                        "item_kind":    row.get("Items[Item kind]", ""),
+                        "status":       row.get("Timepoint Interactive Detail[Status]", ""),
+                        "billing_type": row.get("Timepoint Interactive Detail[Billing type]", ""),
+                        "start":        row.get("Timepoint Interactive Detail[Operation start time]", ""),
+                        "end":          row.get("Timepoint Interactive Detail[Operation end time]", ""),
+                        "total_cu":     row.get("[SumTotal_CU__s_]", 0) or 0,
+                        "timepoint_cu": row.get("[SumTimepoint_CU__s_]", 0) or 0,
+                        "duration":     row.get("[SumDuration__s_]", 0) or 0,
+                        "throttling":   row.get("[SumThrottling__s_]", 0) or 0,
+                        "pct_capacity": row.get("[Sumv__of_base_capacity]", 0) or 0,
+                    })
+        except (KeyError, IndexError) as ex:
+            raise Exception(f"Erro ao processar resposta: {ex}")
+
+        print(f"  Timepoint {tp} [{mode}]: {len(rows)} operações")
+        self.send_json(200, {"rows": rows, "timepoint": tp, "mode": mode})
+
+
+    def _handle_refreshes(self, payload):
+        token    = get_token()
+        cap_id   = CAPACITY_ID
+        top      = int(payload.get("top", 5000))
+        url      = (f"https://api.powerbi.com/v1.0/myorg/admin/capacities/{cap_id}/refreshables"
+                    f"?$top={top}")
+        all_rows = []
+        while url:
+            status, data = call_api(url, token)
+            if status != 200:
+                raise Exception(f"Refreshables API erro {status}: {data.get('error','')}")
+            rows = data.get("value", [])
+            for r in rows:
+                sched = r.get("refreshSchedule") or {}
+                lr    = r.get("lastRefresh")     or {}
+                avg   = r.get("averageDuration")
+                med   = r.get("medianDuration")
+                rpd   = r.get("refreshesPerDay") or 0
+                try:    avg_f = float(str(avg).replace(",",".")) if avg not in (None,"") else None
+                except: avg_f = None
+                try:    med_f = float(str(med).replace(",",".")) if med not in (None,"") else None
+                except: med_f = None
+                # Carga diária estimada em minutos
+                daily_load = round(avg_f * rpd, 2) if avg_f is not None and rpd else None
+                all_rows.append({
+                    "id":            r.get("id",""),
+                    "name":          r.get("name",""),
+                    "kind":          r.get("kind",""),
+                    "refresh_count": r.get("refreshCount") or 0,
+                    "refresh_failures": r.get("refreshFailures") or 0,
+                    "refreshes_per_day": rpd,
+                    "average_duration":  avg_f,
+                    "median_duration":   med_f,
+                    "daily_load_min":    daily_load,
+                    "configured_by":     ", ".join(x for x in (r.get("configuredBy") or []) if x),
+                    "schedule_enabled":  sched.get("enabled", False),
+                    "schedule_days":     ", ".join(x for x in (sched.get("days") or []) if x),
+                    "schedule_times":    ", ".join(x for x in (sched.get("times") or []) if x),
+                    "schedule_timezone": sched.get("localTimeZoneId",""),
+                    "last_status":       lr.get("status",""),
+                    "last_start":        lr.get("startTime",""),
+                    "last_end":          lr.get("endTime",""),
+                    "last_type":         lr.get("refreshType",""),
+                    "last_error":        "",  # parse from serviceExceptionJson if needed
+                })
+            url = data.get("@odata.nextLink")
+
+        # Filter only datasets
+        datasets = [r for r in all_rows if r["kind"] == "Dataset"]
+        print(f"  Refreshables: {len(datasets)} datasets carregados")
+        self.send_json(200, {"datasets": datasets})
+
+
+# ── Main ──────────────────────────────────────────────────────────────
+def main():
+    print("\n" + "═" * 60)
+    print("  FABRIC ACTIVITY MONITOR")
+    print("═" * 60)
+    print(f"\n  Tenant: {TENANT_ID}")
+    print(f"\n  A autenticar...\n")
+
+    try:
+        get_token()
+    except Exception as e:
+        print(f"  AVISO: {e}")
+
+    print(f"\n  ✓ Proxy activo — abre o browser em: http://localhost:{PORT}\n")
+
+    server = HTTPServer(("127.0.0.1", PORT), Handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  Proxy parado.")
+
+
+if __name__ == "__main__":
+    main()
