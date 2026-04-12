@@ -134,49 +134,17 @@ def handle_activity(payload):
     original_count = len(all_events)
     print(f"  Activity API: {original_count} eventos carregados")
 
-    filter_options = {
-        "type": sorted({
-            e.get('Activity') or e.get('OperationName') or '' for e in all_events if e.get('Activity') or e.get('OperationName')
-        }),
-        "ws": sorted({
-            e.get('WorkSpaceName') or e.get('WorkspaceName') or '' for e in all_events if e.get('WorkSpaceName') or e.get('WorkspaceName')
-        }),
-        "user": sorted({
-            e.get('UserId') or e.get('UserName') or '' for e in all_events if e.get('UserId') or e.get('UserName')
-        }),
-    }
-
-    summary_totals = {
-        "totalEvents": original_count,
-        "uniqueUsers": len({
-            e.get('UserId') or e.get('UserName') or '' for e in all_events if e.get('UserId') or e.get('UserName')
-        }),
-        "viewReportCount": sum(1 for e in all_events if (e.get('Activity') or e.get('OperationName')) == 'ViewReport'),
-        "refreshCount": sum(1 for e in all_events if (e.get('Activity') or e.get('OperationName')) == 'RefreshDataset'),
-        "externalCount": sum(1 for e in all_events if (e.get('Activity') or e.get('OperationName')) == 'ConnectFromExternalApplication'),
-        "failureCount": sum(1 for e in all_events if e.get('IsSuccess') is False),
-    }
-
     MAX_EVENTS = 10000
-    if filters:
-        returned_events = all_events
-        truncated = False
-    else:
-        returned_events = all_events
-        truncated = False
-        if len(all_events) > MAX_EVENTS:
-            returned_events = all_events[-MAX_EVENTS:]
-            truncated = True
-            warning = (warning + ' ' if warning else '') + (
-                f"O conjunto é muito grande; retornados apenas os últimos {MAX_EVENTS} eventos para o navegador.")
-
+    returned_events = all_events
+    if len(all_events) > MAX_EVENTS:
+        returned_events = all_events[-MAX_EVENTS:]
+        warning = (warning + ' ' if warning else '') + (
+            f"O conjunto é muito grande; retornados apenas os últimos {MAX_EVENTS} eventos para o navegador." )
     result = {
         "activityEventEntities": returned_events,
         "originalCount": original_count,
         "filteredCount": original_count,
-        "truncated": truncated,
-        "filterOptions": filter_options,
-        "summaryTotals": summary_totals,
+        "truncated": len(returned_events) != original_count,
     }
     if warning:
         result["warning"] = warning

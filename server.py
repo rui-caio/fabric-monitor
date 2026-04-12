@@ -1,6 +1,5 @@
 import json
 import os
-import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from auth import get_app, get_token
@@ -9,9 +8,6 @@ from api.activity  import handle_activity
 from api.capacity  import handle_capacity
 from api.timepoint import handle_timepoint
 from api.refreshes import handle_refreshes
-
-_auth_thread = None
-_auth_thread_lock = threading.Lock()
 
 _here = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(_here, "static", "index.html"), encoding="utf-8") as _f:
@@ -46,9 +42,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", len(_HTML))
             self.end_headers()
             self.wfile.write(_HTML)
-        elif self.path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
         else:
             self.send_response(404)
             self.end_headers()
@@ -70,37 +63,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _auth_status(self):
         accounts = get_app().get_accounts()
-        authenticating = _auth_thread is not None and _auth_thread.is_alive()
         if accounts:
-            self.send_json(200, {
-                "authenticated": True,
-                "account": accounts[0].get("username", ""),
-                "authenticating": authenticating,
-            })
+            self.send_json(200, {"authenticated": True, "account": accounts[0].get("username", "")})
         else:
-            if not authenticating:
-                _ensure_auth_thread()
-                authenticating = True
-            self.send_json(200, {
-                "authenticated": False,
-                "account": "",
-                "authenticating": authenticating,
-            })
-
-
-def _authenticate_background():
-    try:
-        get_token()
-    except Exception as e:
-        print(f"  AVISO: {e}")
-
-
-def _ensure_auth_thread():
-    global _auth_thread
-    with _auth_thread_lock:
-        if _auth_thread is None or not _auth_thread.is_alive():
-            _auth_thread = threading.Thread(target=_authenticate_background, daemon=True)
-            _auth_thread.start()
+            self.send_json(200, {"authenticated": False, "account": ""})
 
 
 def main():
@@ -108,10 +74,14 @@ def main():
     print("  FABRIC ACTIVITY MONITOR")
     print("═" * 60)
     print(f"\n  Tenant: {TENANT_ID}")
-    print(f"\n  ✓ Proxy activo — abre o browser em: http://localhost:{PORT}\n")
-    print("  Autenticando em segundo plano...\n")
+    print(f"\n  A autenticar...\n")
 
-    _ensure_auth_thread()
+    try:
+        get_token()
+    except Exception as e:
+        print(f"  AVISO: {e}")
+
+    print(f"\n  ✓ Proxy activo — abre o browser em: http://localhost:{PORT}\n")
 
     server = HTTPServer(("127.0.0.1", PORT), Handler)
     try:
