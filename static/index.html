@@ -231,7 +231,21 @@
           <option value="2">Last 2h</option>
           <option value="4">Last 4h</option>
           <option value="8">Last 8h</option>
-          <option value="24" selected>Last 24h</option>
+          <option value="24" selected>1 day</option>
+          <option value="48">2 days</option>
+          <option value="72">3 days</option>
+          <option value="96">4 days</option>
+          <option value="120">5 days</option>
+          <option value="144">6 days</option>
+          <option value="168">7 days</option>
+          <option value="192">8 days</option>
+          <option value="216">9 days</option>
+          <option value="240">10 days</option>
+          <option value="264">11 days</option>
+          <option value="288">12 days</option>
+          <option value="312">13 days</option>
+          <option value="336">14 days</option>
+          <option value="360">15 days</option>
         </select>
       </div>
       <div class="fg">
@@ -271,7 +285,7 @@
     <div class="sec">Capacity Utilisation (30s per point)</div>
     <div class="cc" style="margin-bottom:12px">
       <div class="ct">CU % over time</div>
-      <div class="cs">Interactive billable vs Background billable — 30-second granularity</div>
+      <div class="cs">Stacked billable CU % — Background + Interactive (sum vs 100% line) — 30-second granularity</div>
       <div class="cw xlarge"><canvas id="cuChart"></canvas></div>
     </div>
 
@@ -675,14 +689,28 @@ function initCharts(){
   cuChart=new Chart(document.getElementById('cuChart').getContext('2d'),{
     type:'line',
     data:{labels:[],datasets:[
-      {label:'Interactive billable %',data:[],borderColor:'#00ff9f',backgroundColor:'rgba(0,255,159,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
-      {label:'Background billable %', data:[],borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.08)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
+      {label:'Background billable %',data:[],stack:'cu',order:1,borderColor:'#ff6b35',backgroundColor:'rgba(255,107,53,0.35)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
+      {label:'Interactive billable %',data:[],stack:'cu',order:2,borderColor:'#00ff9f',backgroundColor:'rgba(0,255,159,0.35)',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5},
+      {label:'100% limit',data:[],stack:'limit',order:3,borderColor:'#f87171',backgroundColor:'transparent',fill:false,tension:0,pointRadius:0,borderWidth:2.5,borderDash:[10,5]},
     ]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}},
-        tooltip:{callbacks:{footer:items=>'\n🖱 Click to see detail'}}},
+        tooltip:{
+          filter:(item)=>item.datasetIndex<2,
+          callbacks:{
+            footer:(items)=>{
+              const ix=items[0]?.dataIndex;
+              const ch=items[0]?.chart;
+              if(ix==null||!ch) return '\n🖱 Click to see detail';
+              const ds=ch.data.datasets;
+              const bg=+(ds[0].data[ix]??0), intr=+(ds[1].data[ix]??0);
+              return `Total (stacked): ${(bg+intr).toFixed(1)}%\n🖱 Click to see detail`;
+            }
+          }
+        }
+      },
       scales:{x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
-              y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}},
+              y:{stacked:true,ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}},
       onClick:(evt,items)=>{ if(items.length) onChartClick(items[0].index); }}
   });
 
@@ -883,11 +911,23 @@ async function loadCapacity(){
 function renderCapacity(data){
   if(!data.length) return;
 
+  const periodH=parseInt(document.getElementById('cHours').value,10)||24;
+  const labelTimepoint=(tp)=>{
+    const dt=new Date(tp);
+    if(periodH<=24){
+      return dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    }
+    return dt.toLocaleString('en-GB',{
+      day:'2-digit',month:'short',year:'numeric',
+      hour:'2-digit',minute:'2-digit',hour12:false
+    });
+  };
+
   // Subsample for chart performance (max 500 points)
   const step  = data.length > 500 ? Math.ceil(data.length/500) : 1;
   const sample= data.filter((_,i)=>i%step===0);
 
-  const labels= sample.map(d=>new Date(d.timepoint).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+  const labels= sample.map(d=>labelTimepoint(d.timepoint));
 
   // Interactive and Background are already in % (0.57 = 57%)
   const intPct= sample.map(d=>+((d.interactive||0)*100).toFixed(2));
@@ -899,10 +939,18 @@ function renderCapacity(data){
     ((d.interactive||0)+(d.background||0)+(d.interactive_nb||0)+(d.background_nb||0))*100
   ).toFixed(2));
 
-  // CU line chart
+  // CU stacked area: [0]=Background (base), [1]=Interactive (on top), [2]=100% reference line
+  const pct100=sample.map(()=>100);
+  const xRot=periodH>24?45:0;
+  [cuChart,skuChart,breakdownChart].forEach(ch=>{
+    if(ch&&ch.options&&ch.options.scales&&ch.options.scales.x&&ch.options.scales.x.ticks){
+      ch.options.scales.x.ticks.maxRotation=xRot;
+    }
+  });
   cuChart.data.labels=labels;
-  cuChart.data.datasets[0].data=intPct;
-  cuChart.data.datasets[1].data=bgPct;
+  cuChart.data.datasets[0].data=bgPct;
+  cuChart.data.datasets[1].data=intPct;
+  cuChart.data.datasets[2].data=pct100;
   cuChart.update();
 
   // SKU chart — remove fixed 100 line, let axis auto-scale
@@ -914,7 +962,7 @@ function renderCapacity(data){
   // Breakdown bar chart (billable only)
   const step2  = data.length > 100 ? Math.ceil(data.length/100) : 1;
   const sample2= data.filter((_,i)=>i%step2===0);
-  const labels2= sample2.map(d=>new Date(d.timepoint).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
+  const labels2= sample2.map(d=>labelTimepoint(d.timepoint));
   breakdownChart.data.labels=labels2;
   breakdownChart.data.datasets[0].data=sample2.map(d=>+((d.interactive||0)*100).toFixed(2));
   breakdownChart.data.datasets[1].data=sample2.map(d=>+((d.background||0)*100).toFixed(2));
