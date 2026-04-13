@@ -215,6 +215,7 @@
     <button class="tab active" onclick="switchTab('capacity')">⚡ Capacity Utilisation</button>
     <button class="tab" onclick="switchTab('activity')">📋 Activity Log</button>
     <button class="tab" onclick="switchTab('refreshes')">🔄 Refreshes</button>
+    <button class="tab" onclick="switchTab('inventory')">📦 Inventory</button>
   </div>
 
   <!-- ══════════════════════════════════════════════════════ -->
@@ -447,8 +448,9 @@
       <label>&nbsp;</label>
       <button class="btn btn-p" id="btnRef" onclick="loadRefreshes()">↻ Load Refreshes</button>
     </div>
-    <div class="fg"><label>Workspace / Owner</label><div class="ms-wrap" id="ms-rWs"></div></div>
+    <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-rWs"></div></div>
     <div class="fg"><label>Dataset</label><div class="ms-wrap" id="ms-rDs"></div></div>
+    <div class="fg"><label>Configured by</label><div class="ms-wrap" id="ms-rOwn"></div></div>
     <div class="fg"><label>Schedule</label>
       <select id="rSched" onchange="applyRefFilters()">
         <option value="">All</option>
@@ -544,6 +546,62 @@
 
 </div><!-- /page-refreshes -->
 
+<!-- ══════════════════════════════════════════════════════ -->
+<!--  TAB: INVENTORY (capacity workspaces)                 -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="page" id="page-inventory">
+
+  <div class="toolbar">
+    <div class="fg">
+      <label>&nbsp;</label>
+      <button class="btn btn-p" id="btnInv" onclick="loadInventory()">↻ Load Inventory</button>
+    </div>
+    <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-iWs"></div></div>
+    <div class="fg"><label>Type</label><div class="ms-wrap" id="ms-iType"></div></div>
+    <div class="fg" style="min-width:180px">
+      <label>Search name</label>
+      <input type="text" id="invSearch" placeholder="Contains…" oninput="applyInvFilters()"
+        style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none;width:100%;box-sizing:border-box"/>
+    </div>
+    <div class="fg">
+      <label>&nbsp;</label>
+      <button class="btn btn-s" onclick="clearInvFilters()">✕ Clear</button>
+    </div>
+    <div class="data-info" id="invInfo" style="display:none">
+      <strong id="invCount">0</strong> artifacts · <span id="invMetaSrc"></span> · <span id="invTime"></span>
+    </div>
+  </div>
+
+  <div class="banner warn" id="invWarn" style="display:none"></div>
+
+  <div class="sec">Counts by type</div>
+  <div class="grid-mid">
+    <div class="cc">
+      <div class="ct">Distribution</div>
+      <div class="cs">Objects per type (after filters)</div>
+      <div class="cw"><canvas id="invTypeChart"></canvas></div>
+    </div>
+    <div class="cc">
+      <div class="ct">Summary</div>
+      <div class="cs">Totals per type</div>
+      <div class="rank-scroll" id="invByType" style="max-height:200px"><div class="empty" style="padding:14px">—</div></div>
+    </div>
+  </div>
+
+  <div class="sec">Artifact list</div>
+  <div class="tc">
+    <div class="th2" style="align-items:center;gap:10px;">
+      <div class="tt">All items</div>
+      <button class="btn btn-s" onclick="exportInventoryToExcel()">📄 Excel</button>
+      <div class="tn" id="invTcount"></div>
+    </div>
+    <div class="table-scroll" id="invTbl" style="max-height:480px">
+      <div class="empty">Click &quot;Load Inventory&quot; to start</div>
+    </div>
+  </div>
+
+</div><!-- /page-inventory -->
+
 <!-- Drill-down panel -->
 <div class="drill-overlay" id="drillOverlay" onclick="closeDrill(event)">
   <div class="drill-panel">
@@ -588,17 +646,19 @@
 <script>
 const P = window.location.origin;
 let timeChart,methodChart,artifactChart,operationChart,hourChart;
-let cuChart,skuChart,breakdownChart;
+let cuChart,skuChart,breakdownChart,invTypeChart;
 let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySummary=null,_capData=[];
 let _currentActivityRows=[];
 let _currentRefRows=[];
+let _invAll=[],_currentInvRows=[],_invSortCol='workspaceName',_invSortAsc=true;
 let _activityStart=null,_activityEnd=null,_activityIsTruncated=false,_activityFilterKey='';
 let _sortCol='CreationTime',_sortAsc=false;
 let _capSortCol='timepoint',_capSortAsc=false;
 
 // ── Tabs ──────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active', ['capacity','activity','refreshes'][i]===tab));
+  const ids=['capacity','activity','refreshes','inventory'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active', ids[i]===tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+tab).classList.add('active');
 }
@@ -733,6 +793,23 @@ function initCharts(){
       }
     }
   });
+
+  const invCanvas=document.getElementById('invTypeChart');
+  if(invCanvas){
+    invTypeChart=new Chart(invCanvas.getContext('2d'),{
+      type:'bar',
+      data:{labels:[],datasets:[{label:'Items',data:[],backgroundColor:'rgba(0,212,255,0.65)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2}]},
+      options:{
+        indexAxis:'y',
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(30,45,69,0.5)'},beginAtZero:true},
+          y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},autoSkip:false},grid:{color:'rgba(30,45,69,0.3)'}}
+        }
+      }
+    });
+  }
 }
 
 // ── API ───────────────────────────────────────────────────────────────
@@ -936,6 +1013,8 @@ async function doRefresh(){
 }
 
 const _msState={};
+const _refMsIds=new Set(['rWs','rDs','rOwn']);
+const _invMsIds=new Set(['iWs','iType']);
 function buildMultiSelect(containerId,values){
   const id=containerId.replace('ms-','');
   if(!_msState[id]) _msState[id]=new Set();
@@ -988,7 +1067,10 @@ function toggleMs(id,v){
       item.querySelector('input').checked=_msState[id].has(v);
     }
   });
-  updateMsLabel(id);applyFilters();
+  updateMsLabel(id);
+  if(_refMsIds.has(id)) applyRefFilters();
+  else if(_invMsIds.has(id)) applyInvFilters();
+  else applyFilters();
 }
 
 function selectAll(id){
@@ -997,7 +1079,10 @@ function selectAll(id){
     item.className='ms-item checked';
     item.querySelector('input').checked=true;
   });
-  updateMsLabel(id);applyFilters();
+  updateMsLabel(id);
+  if(_refMsIds.has(id)) applyRefFilters();
+  else if(_invMsIds.has(id)) applyInvFilters();
+  else applyFilters();
 }
 
 function clearMs(id){
@@ -1007,6 +1092,8 @@ function clearMs(id){
     item.querySelector('input').checked=false;
   });
   updateMsLabel(id);
+  if(_refMsIds.has(id)){ applyRefFilters(); return; }
+  if(_invMsIds.has(id)){ applyInvFilters(); return; }
   _activityFilterKey='';
   if(_rawActivityEvents.length){
     _allEvents=_rawActivityEvents;
@@ -1690,27 +1777,32 @@ async function loadRefreshes(){
   btn.disabled=false; btn.innerHTML='↻ Load Refreshes';
 }
 
+function refWorkspaceKey(r){
+  const w = (r.workspace||'').trim();
+  return w || '(no workspace)';
+}
+
 function buildRefFilters(){
-  const wss = [...new Set(_refAll.map(r=>r.configured_by||'').filter(Boolean))].sort();
-  // Use workspace from name prefix heuristic — actually use configured_by as "owner"
-  // Build workspace list from dataset names — we don't have workspace directly in this API
-  // Use configuredBy as owner filter, dataset name for dataset filter
-  const owners = [...new Set(_refAll.map(r=>r.configured_by||'').filter(Boolean))].sort();
+  const workspaces = [...new Set(_refAll.map(refWorkspaceKey))].sort();
   const names  = [...new Set(_refAll.map(r=>r.name||'').filter(Boolean))].sort();
-  buildMultiSelect('ms-rWs', owners);
+  const owners = [...new Set(_refAll.map(r=>r.configured_by||'').filter(Boolean))].sort();
+  buildMultiSelect('ms-rWs', workspaces);
   buildMultiSelect('ms-rDs', names);
+  buildMultiSelect('ms-rOwn', owners);
 }
 
 function applyRefFilters(){
   if(!_refAll.length) return;
-  const selOwner = _msState['rWs'] || new Set();
-  const selDs    = _msState['rDs'] || new Set();
+  const selWs   = _msState['rWs'] || new Set();
+  const selDs   = _msState['rDs'] || new Set();
+  const selOwn  = _msState['rOwn'] || new Set();
   const sched    = document.getElementById('rSched').value;
   const status   = document.getElementById('rStatus').value;
 
   let filtered = _refAll.filter(r => {
-    if(selOwner.size>0 && !selOwner.has(r.configured_by||'')) return false;
-    if(selDs.size>0    && !selDs.has(r.name||''))              return false;
+    if(selWs.size>0   && !selWs.has(refWorkspaceKey(r)))       return false;
+    if(selDs.size>0   && !selDs.has(r.name||''))               return false;
+    if(selOwn.size>0 && !selOwn.has(r.configured_by||''))      return false;
     if(sched==='enabled'  && !r.schedule_enabled)              return false;
     if(sched==='disabled' && (r.schedule_enabled || !r.schedule_days)) return false;
     if(sched==='none'     && r.schedule_days)                  return false;
@@ -1725,7 +1817,7 @@ function applyRefFilters(){
 }
 
 function clearRefFilters(){
-  ['rWs','rDs'].forEach(id => { if(_msState[id]) _msState[id].clear(); buildMultiSelect('ms-'+id, []); });
+  ['rWs','rDs','rOwn'].forEach(id => { if(_msState[id]) _msState[id].clear(); buildMultiSelect('ms-'+id, []); });
   buildRefFilters();
   document.getElementById('rSched').value='';
   document.getElementById('rStatus').value='';
@@ -1877,6 +1969,151 @@ function renderRefTable(data){
 function refSortBy(col){
   if(_refSort===col) _refSortAsc=!_refSortAsc; else{_refSort=col;_refSortAsc=false;}
   applyRefFilters();
+}
+
+// ── INVENTORY ─────────────────────────────────────────────────────────
+function invEscape(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+async function loadInventory(){
+  const btn=document.getElementById('btnInv');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
+  const warnEl=document.getElementById('invWarn');
+  warnEl.style.display='none';
+  try{
+    const data=await api('/api/inventory',{});
+    _invAll=data.items||[];
+    document.getElementById('invInfo').style.display='flex';
+    document.getElementById('invMetaSrc').textContent=
+      data.source==='fabric'?'Fabric API (all item types)'
+      :data.source==='powerbi'?'Power BI (reports, datasets, dashboards, dataflows)'
+      :'Mixed: Fabric where available, Power BI otherwise';
+    document.getElementById('invTime').textContent=new Date().toLocaleString('en-GB');
+    if(data.warnings&&data.warnings.length){
+      warnEl.style.display='flex';
+      warnEl.innerHTML='<span>⚠ '+data.warnings.map(w=>`<span style="display:block;margin-top:4px">${invEscape(w)}</span>`).join('')+'</span>';
+    }
+    buildInvFilters();
+    applyInvFilters();
+  }catch(e){
+    alert('Error: '+e.message);
+  }
+  btn.disabled=false;btn.innerHTML='↻ Load Inventory';
+}
+
+function buildInvFilters(){
+  const wss=[...new Set(_invAll.map(r=>r.workspaceName||'').filter(Boolean))].sort();
+  const types=[...new Set(_invAll.map(r=>r.type||'').filter(Boolean))].sort();
+  buildMultiSelect('ms-iWs',wss);
+  buildMultiSelect('ms-iType',types);
+}
+
+function applyInvFilters(){
+  if(!_invAll.length){
+    _currentInvRows=[];
+    document.getElementById('invByType').innerHTML='<div class="empty" style="padding:14px">—</div>';
+    if(typeof invTypeChart!=='undefined'&&invTypeChart){
+      invTypeChart.data.labels=[];invTypeChart.data.datasets[0].data=[];invTypeChart.update();
+    }
+    document.getElementById('invTbl').innerHTML='<div class="empty">Click &quot;Load Inventory&quot; to start</div>';
+    document.getElementById('invTcount').textContent='';
+    return;
+  }
+  const selWs=_msState['iWs']||new Set();
+  const selTy=_msState['iType']||new Set();
+  const q=(document.getElementById('invSearch').value||'').trim().toLowerCase();
+  const filtered=_invAll.filter(r=>{
+    if(selWs.size>0&&!selWs.has(r.workspaceName||'')) return false;
+    if(selTy.size>0&&!selTy.has(r.type||'')) return false;
+    if(q&&!String(r.name||'').toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const sorted=[...filtered].sort((a,b)=>{
+    const col=_invSortCol;
+    let va=a[col],vb=b[col];
+    if(va==null) va='';
+    if(vb==null) vb='';
+    if(typeof va==='string') va=va.toLowerCase();
+    if(typeof vb==='string') vb=vb.toLowerCase();
+    if(va<vb) return _invSortAsc?-1:1;
+    if(va>vb) return _invSortAsc?1:-1;
+    return 0;
+  });
+  _currentInvRows=sorted;
+
+  const counts={};
+  sorted.forEach(r=>{const t=r.type||'Unknown';counts[t]=(counts[t]||0)+1;});
+  renderInvByType(counts);
+  renderInvTypeChart(counts);
+  renderInvTable(sorted);
+  document.getElementById('invTcount').textContent=sorted.length+' rows';
+  document.getElementById('invCount').textContent=sorted.length.toLocaleString();
+}
+
+function clearInvFilters(){
+  ['iWs','iType'].forEach(id=>{if(_msState[id])_msState[id].clear();buildMultiSelect('ms-'+id,[]);});
+  document.getElementById('invSearch').value='';
+  buildInvFilters();
+  applyInvFilters();
+}
+
+function renderInvByType(counts){
+  const el=document.getElementById('invByType');
+  const pairs=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  if(!pairs.length){el.innerHTML='<div class="empty" style="padding:12px">—</div>';return;}
+  el.innerHTML=`<div class="rank-list">${pairs.map(([t,n])=>`
+    <div class="rank-item">
+      <span class="rank-label" title="${invEscape(t)}">${t.length>40?t.substring(0,38)+'…':t}</span>
+      <span class="rank-val">${n}</span>
+    </div>`).join('')}</div>`;
+}
+
+function renderInvTypeChart(counts){
+  if(!invTypeChart) return;
+  const pairs=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,28);
+  invTypeChart.data.labels=pairs.map(p=>p[0]);
+  invTypeChart.data.datasets[0].data=pairs.map(p=>p[1]);
+  invTypeChart.update();
+}
+
+function renderInvTable(data){
+  const tbl=document.getElementById('invTbl');
+  if(!data.length){tbl.innerHTML='<div class="empty">No rows match the filters</div>';return;}
+  const sa=col=>col===_invSortCol?(_invSortAsc?' ↑':' ↓'):'';
+  tbl.innerHTML=`<table>
+    <thead><tr>
+      <th onclick="invSortBy('type')">Type${sa('type')}</th>
+      <th onclick="invSortBy('name')">Name${sa('name')}</th>
+      <th onclick="invSortBy('workspaceName')">Workspace${sa('workspaceName')}</th>
+      <th onclick="invSortBy('itemId')">Item Id${sa('itemId')}</th>
+    </tr></thead>
+    <tbody>${data.slice(0,2000).map(r=>`<tr>
+      <td><span class="badge b-view">${invEscape(r.type||'')}</span></td>
+      <td style="font-size:10px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.name)}">${invEscape(r.name||'')}</td>
+      <td style="font-size:10px;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.workspaceName)}">${invEscape(r.workspaceName||'')}</td>
+      <td style="font-size:9px;color:var(--dim)">${invEscape(r.itemId||'')}</td>
+    </tr>`).join('')}</tbody>
+  </table>
+  ${data.length>2000?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 2000 of ${data.length} — filter or export to Excel</div>`:''}`;
+}
+
+function invSortBy(col){
+  if(_invSortCol===col) _invSortAsc=!_invSortAsc;
+  else{_invSortCol=col;_invSortAsc=col==='name'||col==='workspaceName'||col==='type';}
+  applyInvFilters();
+}
+
+function exportInventoryToExcel(){
+  if(!_currentInvRows.length){alert('No data to export.');return;}
+  exportRowsToExcel('Fabric_Inventory.xls',_currentInvRows,[
+    {label:'Type',value:r=>r.type||''},
+    {label:'Name',value:r=>r.name||''},
+    {label:'Workspace',value:r=>r.workspaceName||''},
+    {label:'Item Id',value:r=>r.itemId||''},
+    {label:'Description',value:r=>r.description||''}
+  ]);
 }
 
 function formatExcelValue(value){

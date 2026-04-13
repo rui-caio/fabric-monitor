@@ -53,9 +53,22 @@ Reads dataset refresh metadata from the **Power BI Capacity Refreshables Admin A
 - **Last Refresh Status donut** — proportion of datasets with their last refresh in Completed, Failed, or Unknown state
 - **Duration Distribution chart** — histogram of average refresh durations bucketed into six ranges (< 0.5 min, 0.5–1 min, 1–5 min, 5–15 min, 15–30 min, > 30 min)
 - **Rankings section** — top 15 datasets by: daily load (avg duration × refreshes per day), total refreshes executed, total failures, and average duration; each with a proportional bar
-- **Filters** — multi-select by owner (configured-by user) and dataset name; dropdowns for schedule status (Active / Inactive / No schedule) and last refresh status (Completed / Failed / Unknown)
+- **Filters** — multi-select by **Workspace**, **Dataset**, and **Configured by**; dropdowns for schedule status (Active / Inactive / No schedule) and last refresh status (Completed / Failed / Unknown)
 - **Sortable detail table** — all datasets with columns: Workspace, Dataset, Configured By, Schedule status badge, Ref/Day (actual count from schedule times, not the capacity maximum), Times, Days, Avg Duration (min), Load/Day (min), Total Ref., Failures, Last Status, Last Refresh timestamp. Duration and load columns are colour-coded: amber above 5 min average, red above 30 min daily load
 - **Export to Excel** — exports the full filtered dataset list with all columns
+
+---
+
+### Inventory Tab
+
+Lists artefacts in **workspaces assigned to the configured capacity** (`CAPACITY_ID`). Intended for Fabric/Power BI administrators who can call tenant Admin APIs.
+
+- **Workspace discovery** — `GET /admin/groups` with OData filter `capacityId eq '{CAPACITY_ID}'` (the non-admin path `/capacities/{id}/workspaces` does not exist). If Admin APIs are forbidden, the app falls back to `GET /groups` and keeps workspaces whose `capacityId` matches.
+- **Power BI enumeration (default)** — uses **bulk tenant-wide Admin APIs** with pagination (`/admin/reports`, `/admin/datasets`, `/admin/dashboards`, `/admin/dataflows`) and **filters in memory** to the capacity workspace set. This avoids hundreds of per-workspace calls that trigger HTTP **429** throttling.
+- **Fabric enumeration (optional)** — if a **cached** token for scope `https://api.fabric.microsoft.com/Workspace.Read.All` is available (silent MSAL only; no second device login), **List Items** is used per workspace for full Fabric types (lakehouses, notebooks, etc.). Workspaces covered by Fabric skip the Power BI pass for that workspace.
+- **UI** — filters (Workspace, Type, name search), counts by type (chart + summary), sortable table, Excel export.
+
+Microsoft documents **strict rate limits** on Admin list APIs (for example, low requests per minute per tenant). Very large tenants may still hit 429; retry later or rely on caching if you add it later.
 
 ---
 
@@ -215,14 +228,15 @@ Ctrl+C
 fabric-monitor/
 ├── fabric_proxy.py        # Entry point — starts the HTTP server
 ├── config.py              # Loads .env and exposes configuration constants
-├── auth.py                # MSAL authentication (Device Code Flow)
+├── auth.py                # MSAL authentication (Device Code Flow; optional silent Fabric scope)
 ├── server.py              # HTTP request handler and main()
 │
 ├── api/
 │   ├── activity.py        # /api/activity — user activity events with disk cache
 │   ├── capacity.py        # /api/capacity — CU consumption via DAX
 │   ├── timepoint.py       # /api/timepoint — per-timepoint operation drill-down
-│   └── refreshes.py       # /api/refreshes — dataset refresh metrics
+│   ├── refreshes.py       # /api/refreshes — dataset refresh metrics
+│   └── inventory.py       # /api/inventory — capacity workspace artefact inventory
 │
 ├── static/
 │   └── index.html         # Frontend (HTML + CSS + JavaScript + Chart.js)
@@ -250,6 +264,7 @@ The server exposes the following endpoints at `http://localhost:8765`:
 | `POST` | `/api/capacity` | CU consumption for the last N hours |
 | `POST` | `/api/timepoint` | Operation detail for a specific timepoint |
 | `POST` | `/api/refreshes` | Dataset refresh metrics and schedules |
+| `POST` | `/api/inventory` | Artefact inventory for workspaces on the configured capacity |
 
 ---
 
@@ -260,8 +275,11 @@ The server exposes the following endpoints at `http://localhost:8765`:
 | [Power BI Activity Events API](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/get-activity-events) | User activity log |
 | [Power BI Capacity Refreshables API](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/get-capacities-refreshables) | Dataset refresh metrics and schedules |
 | [Power BI Execute Queries API](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/execute-queries-in-group) | DAX queries against the Capacity Metrics dataset |
+| [Power BI Admin — Groups](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/groups-get-groups-as-admin), [Reports/Datasets/Dashboards/Dataflows as Admin](https://learn.microsoft.com/en-us/rest/api/power-bi/admin) | Inventory: workspaces on capacity + tenant-wide artefact lists (filtered server-side) |
 
-Authentication uses [MSAL Device Code Flow](https://learn.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#device-code) — no passwords or secrets are stored.
+Optional: [Microsoft Fabric REST — List Items](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/list-items) when `Workspace.Read.All` is present in the token cache (silent acquisition only).
+
+Authentication uses [MSAL Device Code Flow](https://learn.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#device-code) for Power BI (`analysis.windows.net/powerbi/api/.default`). No passwords or secrets are stored.
 
 ---
 
@@ -299,6 +317,12 @@ Verify that `METRICS_WS` and `METRICS_DS` match the workspace and dataset of the
 
 ### Browser shows "Proxy not detected"
 The Python server is not running or is using a different port. Confirm that `python fabric_proxy.py` is active in the terminal and that the `PORT` value in `.env` matches the URL you are accessing.
+
+### Inventory: HTTP 429 or "Retry in … seconds"
+Power BI **Admin** list APIs enforce per-tenant throttling. The app uses **bulk** `/admin/reports` (and datasets, dashboards, dataflows) with pagination instead of per-workspace calls to minimise requests. If the tenant is very large, wait for the retry window or run the inventory again later.
+
+### Inventory: empty or incomplete without Admin rights
+Listing workspaces by `capacityId` requires **GetGroupsAsAdmin** (or the non-admin fallback with visible `capacityId` on `GET /groups`). Enumerating artefacts requires **GetReportsAsAdmin** and related Admin endpoints, or **Fabric List Items** with a valid Fabric token.
 
 ---
 

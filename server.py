@@ -9,6 +9,7 @@ from api.activity  import handle_activity
 from api.capacity  import handle_capacity
 from api.timepoint import handle_timepoint
 from api.refreshes import handle_refreshes
+from api.inventory import handle_inventory
 
 _auth_thread = None
 _auth_thread_lock = threading.Lock()
@@ -63,6 +64,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/capacity":    self.send_json(200, handle_capacity(payload))
             elif self.path == "/api/timepoint":   self.send_json(200, handle_timepoint(payload))
             elif self.path == "/api/refreshes":   self.send_json(200, handle_refreshes(payload))
+            elif self.path == "/api/inventory":   self.send_json(200, handle_inventory(payload))
             else:                                 self.send_json(404, {"error": "Unknown endpoint"})
         except Exception as e:
             print(f"  ERROR: {e}")

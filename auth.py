@@ -13,6 +13,9 @@ except ImportError:
 
 from config import TENANT_ID, PUBLIC_CLIENT_ID, SCOPES
 
+# Microsoft Fabric REST (List Items). Inventory uses silent acquisition only — no second device login.
+FABRIC_SCOPES = ["https://api.fabric.microsoft.com/Workspace.Read.All"]
+
 _token_cache = msal.SerializableTokenCache()
 _auth_lock   = threading.Lock()
 _auth_info   = {"account": ""}
@@ -55,6 +58,23 @@ def get_token():
             _auth_info["account"] = accounts[0].get("username", "")
         print(f"  ✓ Authenticated as {_auth_info['account']}\n")
         return result["access_token"]
+
+
+def try_fabric_token_silent():
+    """
+    Returns an access token for api.fabric.microsoft.com if the user has already
+    consented to Workspace.Read.All (cached). Otherwise returns None — never blocks
+    on device code (inventory falls back to Power BI REST only).
+    """
+    with _auth_lock:
+        app = get_app()
+        accounts = app.get_accounts()
+        if not accounts:
+            return None
+        result = app.acquire_token_silent(FABRIC_SCOPES, account=accounts[0])
+        if result and "access_token" in result:
+            return result["access_token"]
+        return None
 
 
 def call_api(url, token):
