@@ -596,11 +596,6 @@
       <div class="cs">Objects per type (after filters)</div>
       <div class="cw"><canvas id="invTypeChart"></canvas></div>
     </div>
-    <div class="cc">
-      <div class="ct">Summary</div>
-      <div class="cs">Totals per type</div>
-      <div class="rank-scroll" id="invByType" style="max-height:200px"><div class="empty" style="padding:14px">—</div></div>
-    </div>
   </div>
 
   <div class="sec">Artifact list</div>
@@ -2052,7 +2047,6 @@ function buildInvFilters(){
 function applyInvFilters(){
   if(!_invAll.length){
     _currentInvRows=[];
-    document.getElementById('invByType').innerHTML='<div class="empty" style="padding:14px">—</div>';
     if(typeof invTypeChart!=='undefined'&&invTypeChart){
       invTypeChart.data.labels=[];invTypeChart.data.datasets[0].data=[];invTypeChart.update();
     }
@@ -2085,7 +2079,6 @@ function applyInvFilters(){
 
   const counts={};
   sorted.forEach(r=>{const t=r.type||'Unknown';counts[t]=(counts[t]||0)+1;});
-  renderInvByType(counts);
   renderInvTypeChart(counts);
   renderInvTable(sorted);
   document.getElementById('invTcount').textContent=sorted.length+' rows';
@@ -2097,17 +2090,6 @@ function clearInvFilters(){
   document.getElementById('invSearch').value='';
   buildInvFilters();
   applyInvFilters();
-}
-
-function renderInvByType(counts){
-  const el=document.getElementById('invByType');
-  const pairs=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-  if(!pairs.length){el.innerHTML='<div class="empty" style="padding:12px">—</div>';return;}
-  el.innerHTML=`<div class="rank-list">${pairs.map(([t,n])=>`
-    <div class="rank-item">
-      <span class="rank-label" title="${invEscape(t)}">${t.length>40?t.substring(0,38)+'…':t}</span>
-      <span class="rank-val">${n}</span>
-    </div>`).join('')}</div>`;
 }
 
 function renderInvTypeChart(counts){
