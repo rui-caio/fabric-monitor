@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NiW Fabric Monitor</title>
+<title>{{ORG_NAME}} Fabric Monitor</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;800&display=swap');
@@ -73,7 +73,7 @@
   .ms-count{display:inline-block;background:var(--cu);color:#000;border-radius:10px;font-size:9px;font-weight:700;padding:1px 5px;margin-left:3px}
 
   /* KPIs */
-  .kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:16px}
+  .kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px}
   .kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:visible;min-width:0}
   .kv{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;line-height:1;word-break:break-word;white-space:normal}
   .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
@@ -87,15 +87,15 @@
   .ks{font-size:9px;color:var(--dim);margin-top:3px}
 
   /* Capacity KPIs */
-  .cap-kpi-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:16px}
+  .cap-kpi-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px}
   .ckpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative;overflow:visible;min-width:0}
   .ckpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
   .ckpi.c1::before{background:var(--cu)}.ckpi.c2::before{background:var(--int)}
   .ckpi.c3::before{background:var(--bgo)}.ckpi.c4::before{background:var(--warn)}
 
   /* Grids */
-  .grid-wide{display:grid;grid-template-columns:repeat(auto-fill,minmax(400px,1fr));gap:12px;margin-bottom:12px}
-  .grid-mid {display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:12px}
+  .grid-wide{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:12px;margin-bottom:12px}
+  .grid-mid {display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:12px}
 
   .cc{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;min-width:0}
   .ct{font-family:'Syne',sans-serif;font-size:12px;font-weight:600;color:var(--bright);margin-bottom:2px}
@@ -199,21 +199,21 @@
 
   <header>
     <div>
-      <h1><span class="dot" id="dot"></span>NiW FABRIC MONITOR</h1>
-      <div class="sub" id="cap">A ligar ao proxy...</div>
+      <h1><span class="dot" id="dot"></span>{{ORG_NAME}} FABRIC MONITOR</h1>
+      <div class="sub" id="cap">Connecting to proxy...</div>
     </div>
     <div>
       <div class="ts" id="ts">—</div>
     </div>
   </header>
 
-  <div class="banner info" id="pb"><span class="spin"></span><span>A verificar proxy...</span></div>
+  <div class="banner info" id="pb"><span class="spin"></span><span>Checking proxy...</span></div>
   <div class="banner" id="ab" style="display:none"></div>
 
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('capacity')">⚡ Utilização de Capacidade</button>
-    <button class="tab" onclick="switchTab('activity')">📋 Log de Actividade</button>
+    <button class="tab active" onclick="switchTab('capacity')">⚡ Capacity Utilisation</button>
+    <button class="tab" onclick="switchTab('activity')">📋 Activity Log</button>
     <button class="tab" onclick="switchTab('refreshes')">🔄 Refreshes</button>
   </div>
 
@@ -224,18 +224,18 @@
 
     <div class="toolbar">
       <div class="fg">
-        <label>Período</label>
+        <label>Period</label>
         <select id="cHours">
-          <option value="1">Última hora</option>
-          <option value="2">Últimas 2h</option>
-          <option value="4">Últimas 4h</option>
-          <option value="8">Últimas 8h</option>
-          <option value="24" selected>Últimas 24h</option>
+          <option value="1">Last hour</option>
+          <option value="2">Last 2h</option>
+          <option value="4">Last 4h</option>
+          <option value="8">Last 8h</option>
+          <option value="24" selected>Last 24h</option>
         </select>
       </div>
       <div class="fg">
         <label>&nbsp;</label>
-        <button class="btn btn-p" id="btnCap" onclick="loadCapacity()">↻ Carregar Capacidade</button>
+        <button class="btn btn-p" id="btnCap" onclick="loadCapacity()">↻ Load Capacity</button>
       </div>
       <div class="data-info" id="capInfo" style="display:none">
         <strong id="capCount">0</strong> timepoints · <span id="capTime"></span>
@@ -245,59 +245,59 @@
     <!-- KPIs de capacidade -->
     <div class="cap-kpi-strip">
       <div class="ckpi c1">
-        <div class="kl">CU Médio Total</div>
+        <div class="kl">Avg Total CU</div>
         <div class="kv k1" id="ck1">—</div>
         <div class="ks">Interactive + Background</div>
       </div>
       <div class="ckpi c2">
-        <div class="kl">Interactive CU Médio</div>
+        <div class="kl">Avg Interactive CU</div>
         <div class="kv k2" id="ck2">—</div>
         <div class="ks">billable</div>
       </div>
       <div class="ckpi c3">
-        <div class="kl">Background CU Médio</div>
+        <div class="kl">Avg Background CU</div>
         <div class="kv k3" id="ck3">—</div>
         <div class="ks">billable</div>
       </div>
       <div class="ckpi c4">
-        <div class="kl">Pico de Utilização</div>
+        <div class="kl">Peak Utilisation</div>
         <div class="kv k4" id="ck4">—</div>
-        <div class="ks">SKU CU % máximo</div>
+        <div class="ks">peak total (bill. + non-bill.)</div>
       </div>
     </div>
 
     <!-- Gráfico principal de CU -->
-    <div class="sec">Utilização de Capacidade (30s por ponto)</div>
+    <div class="sec">Capacity Utilisation (30s per point)</div>
     <div class="cc" style="margin-bottom:12px">
-      <div class="ct">CU % ao longo do tempo</div>
-      <div class="cs">Interactive billable vs Background billable — granularidade de 30 segundos</div>
+      <div class="ct">CU % over time</div>
+      <div class="cs">Interactive billable vs Background billable — 30-second granularity</div>
       <div class="cw xlarge"><canvas id="cuChart"></canvas></div>
     </div>
 
     <!-- SKU % + Breakdown -->
     <div class="grid-wide">
       <div class="cc">
-        <div class="ct">SKU CU % — Utilização face ao limite</div>
-        <div class="cs">Percentagem de CU consumido face à capacidade total da F64</div>
+        <div class="ct">SKU CU % — Utilisation vs limit</div>
+        <div class="cs">CU consumed as % of total SKU capacity</div>
         <div class="cw tall"><canvas id="skuChart"></canvas></div>
       </div>
       <div class="cc">
         <div class="ct">Breakdown — Interactive vs Background</div>
-        <div class="cs">Decomposição do consumo por tipo</div>
+        <div class="cs">Consumption breakdown by type</div>
         <div class="cw tall"><canvas id="breakdownChart"></canvas></div>
       </div>
     </div>
 
     <!-- Tabela de timepoints -->
-    <div class="sec">Detalhe por Timepoint</div>
+    <div class="sec">Timepoint Detail</div>
     <div class="tc">
       <div class="th2" style="align-items:center;gap:10px;">
-        <div class="tt">Todos os Timepoints</div>
+        <div class="tt">All Timepoints</div>
         <button class="btn btn-s" onclick="exportCapacityToExcel()">📄 Excel</button>
         <div class="tn" id="capTcount"></div>
       </div>
       <div class="table-scroll" id="capTbl">
-        <div class="empty">Clica em "Carregar Capacidade" para começar</div>
+        <div class="empty">Click "Load Capacity" to start</div>
       </div>
     </div>
 
@@ -310,86 +310,86 @@
 
     <div class="toolbar">
       <div class="fg">
-        <label>Período (próximo refresh)</label>
+        <label>Period (next refresh)</label>
         <select id="fHours">
-          <option value="1">Última hora</option>
-          <option value="2">Últimas 2h</option>
-          <option value="6">Últimas 6h</option>
-          <option value="12">Últimas 12h</option>
-          <option value="24">Últimas 24h</option>
-          <option value="168">Últimos 7 dias</option>
-          <option value="360">Últimos 15 dias</option>
-          <option value="720">Últimos 30 dias</option>
+          <option value="1">Last hour</option>
+          <option value="2">Last 2h</option>
+          <option value="6">Last 6h</option>
+          <option value="12">Last 12h</option>
+          <option value="24">Last 24h</option>
+          <option value="168">Last 7 days</option>
+          <option value="360">Last 15 days</option>
+          <option value="720">Last 30 days</option>
         </select>
       </div>
       <div class="fg">
         <label>&nbsp;</label>
-        <button class="btn btn-p" id="btnR" onclick="doRefresh()">↻ Carregar Dados</button>
+        <button class="btn btn-p" id="btnR" onclick="doRefresh()">↻ Load Data</button>
       </div>
-      <div class="fg"><label>Tipo de operação</label><div class="ms-wrap" id="ms-fType"></div></div>
+      <div class="fg"><label>Operation type</label><div class="ms-wrap" id="ms-fType"></div></div>
       <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-fWs"></div></div>
-      <div class="fg"><label>Utilizador</label><div class="ms-wrap" id="ms-fUser"></div></div>
+      <div class="fg"><label>User</label><div class="ms-wrap" id="ms-fUser"></div></div>
       <div class="fg">
-        <label>Estado</label>
+        <label>Status</label>
         <select id="fStatus" onchange="applyFilters()">
-          <option value="">Todos</option>
+          <option value="">All</option>
           <option value="ok">✓ OK</option>
-          <option value="fail">✗ Falhou</option>
+          <option value="fail">✗ Failed</option>
         </select>
       </div>
       <div class="fg">
         <label>&nbsp;</label>
-        <button class="btn btn-s" onclick="clearFilters()">✕ Limpar</button>
+        <button class="btn btn-s" onclick="clearFilters()">✕ Clear</button>
       </div>
       <div class="data-info" id="dataInfo" style="display:none">
-        <strong id="dataCount">0</strong> eventos · <span id="dataTime"></span>
+        <strong id="dataCount">0</strong> events · <span id="dataTime"></span>
       </div>
       <div class="banner warn" id="activityWarning" style="display:none;margin-top:6px;font-size:10px;padding:8px 12px;line-height:1.3"></div>
     </div>
 
     <div class="kpi-strip">
-      <div class="kpi k1"><div class="kl">Total Operações</div><div class="kv k1" id="k1">—</div><div class="ks">filtro activo</div></div>
-      <div class="kpi k2"><div class="kl">Utilizadores Únicos</div><div class="kv k2" id="k2">—</div><div class="ks">filtro activo</div></div>
-      <div class="kpi k3"><div class="kl">Relatórios Vistos</div><div class="kv k3" id="k3">—</div><div class="ks">ViewReport</div></div>
+      <div class="kpi k1"><div class="kl">Total Operations</div><div class="kv k1" id="k1">—</div><div class="ks">active filter</div></div>
+      <div class="kpi k2"><div class="kl">Unique Users</div><div class="kv k2" id="k2">—</div><div class="ks">active filter</div></div>
+      <div class="kpi k3"><div class="kl">Reports Viewed</div><div class="kv k3" id="k3">—</div><div class="ks">ViewReport</div></div>
       <div class="kpi k4"><div class="kl">Refreshes</div><div class="kv k4" id="k4">—</div><div class="ks">RefreshDataset</div></div>
-      <div class="kpi k5"><div class="kl">Ligações Externas</div><div class="kv k5" id="k5">—</div><div class="ks">Desktop / Excel</div></div>
-      <div class="kpi k6"><div class="kl">Falhas</div><div class="kv k6" id="k6">—</div><div class="ks">IsSuccess = false</div></div>
+      <div class="kpi k5"><div class="kl">External Connections</div><div class="kv k5" id="k5">—</div><div class="ks">Desktop / Excel</div></div>
+      <div class="kpi k6"><div class="kl">Failures</div><div class="kv k6" id="k6">—</div><div class="ks">IsSuccess = false</div></div>
     </div>
 
-    <div class="sec">Actividade Temporal</div>
+    <div class="sec">Temporal Activity</div>
     <div class="grid-wide">
       <div class="cc">
-        <div class="ct">Operações por Hora</div>
-        <div class="cs">Volume de actividade ao longo do tempo</div>
+        <div class="ct">Operations per Hour</div>
+        <div class="cs">Activity volume over time</div>
         <div class="cw tall"><canvas id="timeChart"></canvas></div>
       </div>
       <div class="cc">
-        <div class="ct">Distribuição por Hora do Dia</div>
-        <div class="cs">A que horas a plataforma é mais usada</div>
+        <div class="ct">Distribution by Hour of Day</div>
+        <div class="cs">Peak usage hours</div>
         <div class="cw tall"><canvas id="hourChart"></canvas></div>
       </div>
     </div>
 
-    <div class="sec">Distribuição</div>
+    <div class="sec">Distribution</div>
     <div class="grid-wide">
       <div class="cc">
-        <div class="ct">Método de Acesso</div>
-        <div class="cs">Como os utilizadores acedem</div>
+        <div class="ct">Access Method</div>
+        <div class="cs">How users connect</div>
         <div class="cw"><canvas id="methodChart"></canvas></div>
       </div>
       <div class="cc">
-        <div class="ct">Tipo de Artefacto</div>
-        <div class="cs">Distribuição por ArtifactKind</div>
+        <div class="ct">Artifact Type</div>
+        <div class="cs">Distribution by ArtifactKind</div>
         <div class="cw"><canvas id="artifactChart"></canvas></div>
       </div>
       <div class="cc">
-        <div class="ct">Tipo de Operação</div>
-        <div class="cs">Distribuição por evento</div>
+        <div class="ct">Operation Type</div>
+        <div class="cs">Distribution by event</div>
         <div class="cw"><canvas id="operationChart"></canvas></div>
       </div>
       <div class="cc">
-        <div class="ct">Falhas por Operação</div>
-        <div class="cs">Onde estão a ocorrer erros</div>
+        <div class="ct">Failures by Operation</div>
+        <div class="cs">Where errors are occurring</div>
         <div class="rank-scroll" id="rankFails"><div class="empty" style="padding:14px">—</div></div>
       </div>
     </div>
@@ -397,41 +397,41 @@
     <div class="sec">Rankings</div>
     <div class="grid-wide">
       <div class="cc">
-        <div class="ct">Top Relatórios</div>
-        <div class="cs">Por número de visualizações</div>
+        <div class="ct">Top Reports</div>
+        <div class="cs">By number of views</div>
         <div class="rank-scroll" id="rankReports"><div class="empty" style="padding:14px">—</div></div>
       </div>
       <div class="cc">
         <div class="ct">Top Datasets</div>
-        <div class="cs">Por número de acessos</div>
+        <div class="cs">By number of accesses</div>
         <div class="rank-scroll" id="rankDatasets"><div class="empty" style="padding:14px">—</div></div>
       </div>
       <div class="cc">
-        <div class="ct">Top Utilizadores</div>
-        <div class="cs">Por número de operações</div>
+        <div class="ct">Top Users</div>
+        <div class="cs">By number of operations</div>
         <div class="rank-scroll" id="rankUsers"><div class="empty" style="padding:14px">—</div></div>
       </div>
       <div class="cc">
         <div class="ct">Top Workspaces</div>
-        <div class="cs">Por número de operações</div>
+        <div class="cs">By number of operations</div>
         <div class="rank-scroll" id="rankWs"><div class="empty" style="padding:14px">—</div></div>
       </div>
       <div class="cc">
-        <div class="ct">Aplicações Externas</div>
+        <div class="ct">External Applications</div>
         <div class="cs">ConnectFromExternalApplication</div>
         <div class="rank-scroll" id="rankExternal"><div class="empty" style="padding:14px">—</div></div>
       </div>
     </div>
 
-    <div class="sec">Log Detalhado</div>
+    <div class="sec">Detailed Log</div>
     <div class="tc">
       <div class="th2" style="align-items:center;gap:10px;">
-        <div class="tt">Todos os Eventos</div>
+        <div class="tt">All Events</div>
         <button class="btn btn-s" onclick="exportActivityToExcel()">📄 Excel</button>
         <div class="tn" id="tcount"></div>
       </div>
       <div class="table-scroll" id="tbl">
-        <div class="empty">Clica em "Carregar Dados" para começar</div>
+        <div class="empty">Click "Load Data" to start</div>
       </div>
     </div>
 
@@ -445,21 +445,21 @@
   <div class="toolbar">
     <div class="fg">
       <label>&nbsp;</label>
-      <button class="btn btn-p" id="btnRef" onclick="loadRefreshes()">↻ Carregar Refreshes</button>
+      <button class="btn btn-p" id="btnRef" onclick="loadRefreshes()">↻ Load Refreshes</button>
     </div>
-    <div class="fg"><label>Workspace / Proprietário</label><div class="ms-wrap" id="ms-rWs"></div></div>
+    <div class="fg"><label>Workspace / Owner</label><div class="ms-wrap" id="ms-rWs"></div></div>
     <div class="fg"><label>Dataset</label><div class="ms-wrap" id="ms-rDs"></div></div>
     <div class="fg"><label>Schedule</label>
       <select id="rSched" onchange="applyRefFilters()">
-        <option value="">Todos</option>
-        <option value="enabled">Activo</option>
-        <option value="disabled">Inactivo</option>
-        <option value="none">Sem schedule</option>
+        <option value="">All</option>
+        <option value="enabled">Active</option>
+        <option value="disabled">Inactive</option>
+        <option value="none">No schedule</option>
       </select>
     </div>
-    <div class="fg"><label>Último estado</label>
+    <div class="fg"><label>Last status</label>
       <select id="rStatus" onchange="applyRefFilters()">
-        <option value="">Todos</option>
+        <option value="">All</option>
         <option value="Completed">✓ Completed</option>
         <option value="Failed">✗ Failed</option>
         <option value="Unknown">Unknown</option>
@@ -467,7 +467,7 @@
     </div>
     <div class="fg">
       <label>&nbsp;</label>
-      <button class="btn btn-s" onclick="clearRefFilters()">✕ Limpar</button>
+      <button class="btn btn-s" onclick="clearRefFilters()">✕ Clear</button>
     </div>
     <div class="data-info" id="refInfo" style="display:none">
       <strong id="refCount">0</strong> datasets · <span id="refTime"></span>
@@ -476,30 +476,30 @@
 
   <!-- KPIs -->
   <div class="kpi-strip" id="refKpis">
-    <div class="kpi k1"><div class="kl">Total Datasets</div><div class="kv k1" id="rk1">—</div><div class="ks">com refresh</div></div>
-    <div class="kpi k2"><div class="kl">Schedules Activos</div><div class="kv k2" id="rk2">—</div><div class="ks">enabled</div></div>
-    <div class="kpi k3"><div class="kl">Total Refreshes</div><div class="kv k3" id="rk3">—</div><div class="ks">no período</div></div>
-    <div class="kpi k4"><div class="kl">Total Falhas</div><div class="kv k4" id="rk4">—</div><div class="ks">refresh failures</div></div>
-    <div class="kpi k5"><div class="kl">Carga Diária Total</div><div class="kv k5" id="rk5">—</div><div class="ks">min/dia estimados</div></div>
-    <div class="kpi k6"><div class="kl">Duração Média</div><div class="kv k6" id="rk6">—</div><div class="ks">minutos</div></div>
+    <div class="kpi k1"><div class="kl">Total Datasets</div><div class="kv k1" id="rk1">—</div><div class="ks">with refresh</div></div>
+    <div class="kpi k2"><div class="kl">Active Schedules</div><div class="kv k2" id="rk2">—</div><div class="ks">enabled</div></div>
+    <div class="kpi k3"><div class="kl">Total Refreshes</div><div class="kv k3" id="rk3">—</div><div class="ks">in period</div></div>
+    <div class="kpi k4"><div class="kl">Total Failures</div><div class="kv k4" id="rk4">—</div><div class="ks">refresh failures</div></div>
+    <div class="kpi k5"><div class="kl">Total Daily Load</div><div class="kv k5" id="rk5">—</div><div class="ks">min/day estimated</div></div>
+    <div class="kpi k6"><div class="kl">Avg Duration</div><div class="kv k6" id="rk6">—</div><div class="ks">minutes</div></div>
   </div>
 
   <!-- Charts row -->
-  <div class="sec">Distribuição</div>
+  <div class="sec">Distribution</div>
   <div class="grid-wide">
     <div class="cc">
-      <div class="ct">Refreshes por Hora do Dia</div>
-      <div class="cs">Padrão de execução configurado</div>
+      <div class="ct">Refreshes by Hour of Day</div>
+      <div class="cs">Configured execution pattern</div>
       <div class="cw"><canvas id="refHourChart"></canvas></div>
     </div>
     <div class="cc">
-      <div class="ct">Estado do Último Refresh</div>
+      <div class="ct">Last Refresh Status</div>
       <div class="cs">Completed / Failed / Unknown</div>
       <div class="cw"><canvas id="refStatusChart"></canvas></div>
     </div>
     <div class="cc">
-      <div class="ct">Distribuição de Duração</div>
-      <div class="cs">Duração média por dataset (min)</div>
+      <div class="ct">Duration Distribution</div>
+      <div class="cs">Average duration per dataset (min)</div>
       <div class="cw"><canvas id="refDurChart"></canvas></div>
     </div>
   </div>
@@ -508,37 +508,37 @@
   <div class="sec">Rankings</div>
   <div class="grid-wide">
     <div class="cc">
-      <div class="ct">Top Carga Diária</div>
-      <div class="cs">avg_duration × refreshes_per_day (min/dia)</div>
+      <div class="ct">Top Daily Load</div>
+      <div class="cs">avg_duration × refreshes_per_day (min/day)</div>
       <div class="rank-scroll" id="rrLoad"><div class="empty" style="padding:14px">—</div></div>
     </div>
     <div class="cc">
-      <div class="ct">Top por Nº Refreshes</div>
-      <div class="cs">Total de refreshes executados</div>
+      <div class="ct">Top by # Refreshes</div>
+      <div class="cs">Total refreshes executed</div>
       <div class="rank-scroll" id="rrCount"><div class="empty" style="padding:14px">—</div></div>
     </div>
     <div class="cc">
-      <div class="ct">Top Falhas</div>
-      <div class="cs">Datasets com mais falhas</div>
+      <div class="ct">Top Failures</div>
+      <div class="cs">Datasets with most failures</div>
       <div class="rank-scroll" id="rrFail"><div class="empty" style="padding:14px">—</div></div>
     </div>
     <div class="cc">
-      <div class="ct">Top Duração Média</div>
-      <div class="cs">Datasets mais lentos (min)</div>
+      <div class="ct">Top Avg Duration</div>
+      <div class="cs">Slowest datasets (min)</div>
       <div class="rank-scroll" id="rrDur"><div class="empty" style="padding:14px">—</div></div>
     </div>
   </div>
 
   <!-- Table -->
-  <div class="sec">Detalhe por Dataset</div>
+  <div class="sec">Dataset Detail</div>
   <div class="tc">
     <div class="th2" style="align-items:center;gap:10px;">
-      <div class="tt">Todos os Datasets</div>
+      <div class="tt">All Datasets</div>
       <button class="btn btn-s" onclick="exportRefreshesToExcel()">📄 Excel</button>
       <div class="tn" id="refTcount"></div>
     </div>
     <div class="table-scroll" id="refTbl">
-      <div class="empty">Clica em "Carregar Refreshes" para começar</div>
+      <div class="empty">Click "Load Refreshes" to start</div>
     </div>
   </div>
 
@@ -549,7 +549,7 @@
   <div class="drill-panel">
     <div class="drill-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
       <div>
-        <div class="drill-title" id="drillTitle">Detalhe do Timepoint</div>
+        <div class="drill-title" id="drillTitle">Timepoint Detail</div>
         <div class="drill-tp" id="drillTp"></div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -563,22 +563,22 @@
     </div>
     <div style="padding:0 20px 10px;border-bottom:1px solid var(--border);background:var(--surface)">
       <div class="dim-selector" id="dimSelector">
-        <span class="dim-label">Agrupar:</span>
-        <label class="dim-pill active" onclick="toggleDim('operation')"><span>Operação</span></label>
-        <label class="dim-pill" onclick="toggleDim('user')"><span>Utilizador</span></label>
+        <span class="dim-label">Group by:</span>
+        <label class="dim-pill active" onclick="toggleDim('operation')"><span>Operation</span></label>
+        <label class="dim-pill" onclick="toggleDim('user')"><span>User</span></label>
         <label class="dim-pill" onclick="toggleDim('item')"><span>Item</span></label>
         <label class="dim-pill" onclick="toggleDim('workspace')"><span>Workspace</span></label>
-        <label class="dim-pill" onclick="toggleDim('item_kind')"><span>Tipo</span></label>
-        <label class="dim-pill" onclick="toggleDim('status')"><span>Estado</span></label>
+        <label class="dim-pill" onclick="toggleDim('item_kind')"><span>Type</span></label>
+        <label class="dim-pill" onclick="toggleDim('status')"><span>Status</span></label>
         <label class="dim-pill" onclick="toggleDim('billing_type')"><span>Billing Type</span></label>
       </div>
       <div class="drill-filter-row" id="drillFilterRow">
-        <span class="dim-label">Filtrar:</span>
-        <span style="font-size:10px;color:var(--dim);font-style:italic">Carrega dados primeiro</span>
+        <span class="dim-label">Filter:</span>
+        <span style="font-size:10px;color:var(--dim);font-style:italic">Load data first</span>
       </div>
     </div>
     <div class="drill-body" id="drillBody">
-      <div class="drill-spin"><span class="spin"></span> A carregar...</div>
+      <div class="drill-spin"><span class="spin"></span> Loading...</div>
     </div>
   </div>
 </div>
@@ -620,7 +620,7 @@ function initCharts(){
     ]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}},
-        tooltip:{callbacks:{footer:items=>'\n🖱 Clica para ver detalhe'}}},
+        tooltip:{callbacks:{footer:items=>'\n🖱 Click to see detail'}}},
       scales:{x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
               y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}},
       onClick:(evt,items)=>{ if(items.length) onChartClick(items[0].index); }}
@@ -656,10 +656,10 @@ function initCharts(){
     data: {
       labels: [],
       datasets: [
-        {label:'Ver Relatório',data:[],backgroundColor:'rgba(0,212,255,0.6)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},
-        {label:'Refresh',      data:[],backgroundColor:'rgba(255,107,53,0.6)',borderColor:'#ff6b35',borderWidth:1,borderRadius:2},
-        {label:'Externo',      data:[],backgroundColor:'rgba(0,255,159,0.5)',borderColor:'#00ff9f',borderWidth:1,borderRadius:2},
-        {label:'Outros',       data:[],backgroundColor:'rgba(100,116,139,0.4)',borderColor:'#64748b',borderWidth:1,borderRadius:2}
+        {label:'View Report',data:[],backgroundColor:'rgba(0,212,255,0.6)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2},
+        {label:'Refresh',    data:[],backgroundColor:'rgba(255,107,53,0.6)',borderColor:'#ff6b35',borderWidth:1,borderRadius:2},
+        {label:'External',   data:[],backgroundColor:'rgba(0,255,159,0.5)',borderColor:'#00ff9f',borderWidth:1,borderRadius:2},
+        {label:'Other',      data:[],backgroundColor:'rgba(100,116,139,0.4)',borderColor:'#64748b',borderWidth:1,borderRadius:2}
       ]
     },
     options: {
@@ -678,7 +678,7 @@ function initCharts(){
     type: 'bar',
     data: {
       labels: [...Array(24)].map((_,i)=>String(i).padStart(2,'0')+'h'),
-      datasets:[{label:'Operações',data:Array(24).fill(0),backgroundColor:'rgba(168,85,247,0.5)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]
+      datasets:[{label:'Operations',data:Array(24).fill(0),backgroundColor:'rgba(168,85,247,0.5)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]
     },
     options: {
       responsive: true,
@@ -720,7 +720,7 @@ function initCharts(){
     type: 'bar',
     data: {
       labels: [],
-      datasets:[{label:'Operações',data:[],backgroundColor:'rgba(168,85,247,0.7)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]
+      datasets:[{label:'Operations',data:[],backgroundColor:'rgba(168,85,247,0.7)',borderColor:'#a855f7',borderWidth:1,borderRadius:2}]
     },
     options: {
       responsive: true,
@@ -728,8 +728,8 @@ function initCharts(){
       interaction: {mode:'index', intersect:false},
       plugins: {legend:{display:false}},
       scales: {
-        x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(30,45,69,0.5)'},title:{display:true,text:'Operação',color:'#64748b',font:{family:'JetBrains Mono',size:11}}},
-        y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},precision:0},grid:{color:'rgba(30,45,69,0.5)'},beginAtZero:true,title:{display:true,text:'Contagem',color:'#64748b',font:{family:'JetBrains Mono',size:11}}}
+        x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9}},grid:{color:'rgba(30,45,69,0.5)'},title:{display:true,text:'Operation',color:'#64748b',font:{family:'JetBrains Mono',size:11}}},
+        y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},precision:0},grid:{color:'rgba(30,45,69,0.5)'},beginAtZero:true,title:{display:true,text:'Count',color:'#64748b',font:{family:'JetBrains Mono',size:11}}}
       }
     }
   });
@@ -753,30 +753,30 @@ async function checkProxy(){
   }
   try{
     await api('/api/ping');
-    pb.className='banner ok';pb.innerHTML='✓ Proxy activo';
+    pb.className='banner ok';pb.innerHTML='✓ Proxy active';
     const s=await api('/api/auth_status');
     ab.style.display='flex';
     if(s.authenticated){
       ab.className='banner ok';
-      ab.innerHTML=`✓ Autenticado como <strong style="margin-left:4px">${s.account}</strong>`;
-      document.getElementById('cap').textContent='Pronto — selecciona um separador';
+      ab.innerHTML=`✓ Authenticated as <strong style="margin-left:4px">${s.account}</strong>`;
+      document.getElementById('cap').textContent='Ready — select a tab';
       document.getElementById('dot').className='dot on';
     }else if(s.authenticating){
       ab.className='banner info';
-      ab.innerHTML='⚙ Autenticação em curso — completa o login no terminal';
-      document.getElementById('cap').textContent='Proxy activo — a aguardar autenticação';
+      ab.innerHTML='⚙ Authentication in progress — complete login in the terminal';
+      document.getElementById('cap').textContent='Proxy active — waiting for authentication';
       document.getElementById('dot').className='dot err';
       _authRetryTimer = setTimeout(checkProxy, 3000);
     }else{
       ab.className='banner warn';
-      ab.innerHTML='⚠ Não autenticado — verifica o terminal do proxy';
-      document.getElementById('cap').textContent='Proxy activo — autenticação necessária';
+      ab.innerHTML='⚠ Not authenticated — check the proxy terminal';
+      document.getElementById('cap').textContent='Proxy active — authentication required';
       document.getElementById('dot').className='dot err';
       _authRetryTimer = setTimeout(checkProxy, 5000);
     }
   }catch(e){
     pb.className='banner fail';
-    pb.innerHTML='✗ Proxy não detectado — corre <strong style="margin-left:4px">python fabric_proxy.py</strong>';
+    pb.innerHTML='✗ Proxy not detected — run <strong style="margin-left:4px">python fabric_proxy.py</strong>';
     _authRetryTimer = setTimeout(checkProxy, 5000);
   }
 }
@@ -784,7 +784,7 @@ async function checkProxy(){
 // ── CAPACITY ──────────────────────────────────────────────────────────
 async function loadCapacity(){
   const btn=document.getElementById('btnCap');
-  btn.disabled=true;btn.innerHTML='<span class="spin"></span>A carregar...';
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
   try{
     const hours=parseInt(document.getElementById('cHours').value);
     const data=await api('/api/capacity',{hours});
@@ -792,15 +792,15 @@ async function loadCapacity(){
 
     document.getElementById('capInfo').style.display='flex';
     document.getElementById('capCount').textContent=_capData.length.toLocaleString();
-    document.getElementById('capTime').textContent=`às ${new Date().toLocaleTimeString('pt-PT')}`;
+    document.getElementById('capTime').textContent=`at ${new Date().toLocaleTimeString('en-GB')}`;
     document.getElementById('capTcount').textContent=_capData.length+' timepoints';
 
     renderCapacity(_capData);
   }catch(e){
-    document.getElementById('cap').textContent='Erro: '+e.message;
+    document.getElementById('cap').textContent='Error: '+e.message;
     console.error(e);
   }
-  btn.disabled=false;btn.innerHTML='↻ Carregar Capacidade';
+  btn.disabled=false;btn.innerHTML='↻ Load Capacity';
 }
 
 function renderCapacity(data){
@@ -810,19 +810,17 @@ function renderCapacity(data){
   const step  = data.length > 500 ? Math.ceil(data.length/500) : 1;
   const sample= data.filter((_,i)=>i%step===0);
 
-  const labels= sample.map(d=>new Date(d.timepoint).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+  const labels= sample.map(d=>new Date(d.timepoint).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
 
   // Interactive and Background are already in % (0.57 = 57%)
   const intPct= sample.map(d=>+((d.interactive||0)*100).toFixed(2));
   const bgPct = sample.map(d=>+((d.background||0)*100).toFixed(2));
 
-  // SKU CU % — value from model is already a ratio (1.0 = 100%)
-  // but may also come as actual % depending on model version — detect automatically
-  const rawSku = data.map(d=>d.sku_cu||0);
-  const maxRaw = Math.max(...rawSku);
-  // if max > 2, assume already in % form; otherwise multiply by 100
-  const skuMult = maxRaw > 2 ? 1 : 100;
-  const skuPct= sample.map(d=>+((d.sku_cu||0)*skuMult).toFixed(2));
+  // SKU CU % — computed from component fields (billable + non-billable)
+  // sku_cu from Power BI can be unreliable in SUMMARIZECOLUMNS context
+  const skuPct= sample.map(d=>+(
+    ((d.interactive||0)+(d.background||0)+(d.interactive_nb||0)+(d.background_nb||0))*100
+  ).toFixed(2));
 
   // CU line chart
   cuChart.data.labels=labels;
@@ -839,7 +837,7 @@ function renderCapacity(data){
   // Breakdown bar chart (billable only)
   const step2  = data.length > 100 ? Math.ceil(data.length/100) : 1;
   const sample2= data.filter((_,i)=>i%step2===0);
-  const labels2= sample2.map(d=>new Date(d.timepoint).toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+  const labels2= sample2.map(d=>new Date(d.timepoint).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
   breakdownChart.data.labels=labels2;
   breakdownChart.data.datasets[0].data=sample2.map(d=>+((d.interactive||0)*100).toFixed(2));
   breakdownChart.data.datasets[1].data=sample2.map(d=>+((d.background||0)*100).toFixed(2));
@@ -847,15 +845,15 @@ function renderCapacity(data){
 
   // KPIs — use full data (not subsampled)
   const avg=arr=>arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1):0;
-  const intBill = data.map(d=>(d.interactive||0)*100);
-  const bgBill  = data.map(d=>(d.background||0)*100);
-  const total   = data.map((_,i)=>intBill[i]+bgBill[i]);
-  const skuAll  = data.map(d=>(d.sku_cu||0)*skuMult);
+  const intBill  = data.map(d=>(d.interactive||0)*100);
+  const bgBill   = data.map(d=>(d.background||0)*100);
+  const total    = data.map((_,i)=>intBill[i]+bgBill[i]);
+  const totalAll = data.map(d=>((d.interactive||0)+(d.background||0)+(d.interactive_nb||0)+(d.background_nb||0))*100);
 
   document.getElementById('ck1').textContent=avg(total)+'%';
   document.getElementById('ck2').textContent=avg(intBill)+'%';
   document.getElementById('ck3').textContent=avg(bgBill)+'%';
-  document.getElementById('ck4').textContent=Math.max(...skuAll).toFixed(1)+'%';
+  document.getElementById('ck4').textContent=Math.max(...totalAll).toFixed(1)+'%';
 
   // Table
   renderCapTable(data);
@@ -884,7 +882,7 @@ function renderCapTable(data){
       <th onclick="capSortBy('sku_cu')">SKU CU %${sa('sku_cu')}</th>
     </tr></thead>
     <tbody>${sorted.slice(0,500).map(d=>`<tr>
-      <td style="font-size:10px">${new Date(d.timepoint).toLocaleString('pt-PT')}</td>
+      <td style="font-size:10px">${new Date(d.timepoint).toLocaleString('en-GB')}</td>
       <td>${pct(d.interactive)}</td>
       <td>${pct(d.background)}</td>
       <td>${pct(d.interactive_nb)}</td>
@@ -892,7 +890,7 @@ function renderCapTable(data){
       <td>${pct(d.sku_cu)}</td>
     </tr>`).join('')}</tbody>
   </table>
-  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} timepoints</div>`:''}`;
+  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 500 of ${sorted.length} timepoints</div>`:''}`;
 }
 
 function capSortBy(col){
@@ -903,7 +901,7 @@ function capSortBy(col){
 // ── ACTIVITY ──────────────────────────────────────────────────────────
 async function doRefresh(){
   const btn=document.getElementById('btnR');
-  btn.disabled=true;btn.innerHTML='<span class="spin"></span>A carregar...';
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
   try{
     const hours=parseInt(document.getElementById('fHours').value);
     const now=new Date(),from=new Date(now-hours*3600000);
@@ -928,13 +926,13 @@ async function doRefresh(){
     document.getElementById('dataInfo').style.display='flex';
     const totalCount = data.originalCount != null ? data.originalCount : _allEvents.length;
     document.getElementById('dataCount').textContent=totalCount.toLocaleString();
-    document.getElementById('dataTime').textContent=`às ${now.toLocaleTimeString('pt-PT')}`;
+    document.getElementById('dataTime').textContent=`at ${now.toLocaleTimeString('en-GB')}`;
     applyFilters();
   }catch(e){
     console.error(e);
-    alert('Erro: '+e.message);
+    alert('Error: '+e.message);
   }
-  btn.disabled=false;btn.innerHTML='↻ Carregar Dados';
+  btn.disabled=false;btn.innerHTML='↻ Load Data';
 }
 
 const _msState={};
@@ -945,13 +943,13 @@ function buildMultiSelect(containerId,values){
   container.innerHTML='';
   const btn=document.createElement('button');
   btn.className='ms-btn';
-  btn.innerHTML=`<span class="ms-label" id="${id}-label">Todos</span><span class="ms-arrow">▾</span>`;
+  btn.innerHTML=`<span class="ms-label" id="${id}-label">All</span><span class="ms-arrow">▾</span>`;
   btn.onclick=e=>{e.stopPropagation();toggleDropdown(id);};
   container.appendChild(btn);
   const dd=document.createElement('div');
   dd.className='ms-dropdown';dd.id=`${id}-dd`;
   const srch=document.createElement('input');
-  srch.type='text';srch.placeholder='Pesquisar...';srch.className='ms-search';
+  srch.type='text';srch.placeholder='Search...';srch.className='ms-search';
   srch.oninput=()=>filterItems(id,srch.value);
   srch.onclick=e=>e.stopPropagation();
   dd.appendChild(srch);
@@ -961,7 +959,7 @@ function buildMultiSelect(containerId,values){
   dd.appendChild(list);
   const footer=document.createElement('div');
   footer.className='ms-footer';
-  footer.innerHTML=`<button onclick="selectAll('${id}')">Todos</button><button onclick="clearMs('${id}')">Limpar</button>`;
+  footer.innerHTML=`<button onclick="selectAll('${id}')">All</button><button onclick="clearMs('${id}')">Clear</button>`;
   dd.appendChild(footer);
   container.appendChild(dd);
   updateMsLabel(id);
@@ -1019,7 +1017,7 @@ function clearMs(id){
 function updateMsLabel(id){
   const sel=_msState[id],label=document.getElementById(`${id}-label`);
   if(!label) return;
-  if(sel.size===0){label.innerHTML='Todos';}
+  if(sel.size===0){label.innerHTML='All';}
   else{
     const names=[...sel].slice(0,2).join(', ');
     const extra=sel.size>2?` <span class="ms-count">+${sel.size-2}</span>`:'';
@@ -1049,7 +1047,7 @@ async function fetchActivityFilteredEvents(filters){
   if(!_activityStart||!_activityEnd) return;
   const warningEl=document.getElementById('activityWarning');
   const btn=document.getElementById('btnR');
-  btn.disabled=true;btn.innerHTML='<span class="spin"></span>A carregar...';
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
   try{
     const data=await api('/api/activity',{start:_activityStart,end:_activityEnd,filters});
     const events=data.activityEventEntities||[];
@@ -1069,9 +1067,9 @@ async function fetchActivityFilteredEvents(filters){
     renderCurrentActivity();
   }catch(e){
     console.error(e);
-    alert('Erro: '+e.message);
+    alert('Error: '+e.message);
   }
-  btn.disabled=false;btn.innerHTML='↻ Carregar Dados';
+  btn.disabled=false;btn.innerHTML='↻ Load Data';
 }
 
 function renderCurrentActivity(){
@@ -1159,7 +1157,7 @@ function renderKPIs(ev){
     document.getElementById('k4').textContent=_activitySummary.refreshCount.toLocaleString();
     document.getElementById('k5').textContent=_activitySummary.externalCount.toLocaleString();
     document.getElementById('k6').textContent=_activitySummary.failureCount.toLocaleString();
-    document.getElementById('tcount').textContent=_activitySummary.totalEvents+' eventos';
+    document.getElementById('tcount').textContent=_activitySummary.totalEvents+' events';
     return;
   }
   const users=new Set(ev.map(e=>e.UserId||e.UserName||'?'));
@@ -1169,7 +1167,7 @@ function renderKPIs(ev){
   document.getElementById('k4').textContent=ev.filter(e=>e.Activity==='RefreshDataset').length.toLocaleString();
   document.getElementById('k5').textContent=ev.filter(e=>e.Activity==='ConnectFromExternalApplication').length.toLocaleString();
   document.getElementById('k6').textContent=ev.filter(e=>e.IsSuccess===false).length.toLocaleString();
-  document.getElementById('tcount').textContent=ev.length+' eventos';
+  document.getElementById('tcount').textContent=ev.length+' events';
 }
 
 function renderTimeChart(ev){
@@ -1186,7 +1184,7 @@ function renderTimeChart(ev){
   const labels=[],d0=[],d1=[],d2=[],d3=[];
   for(let i=0;i<slots;i++){
     const s=new Date(minT+i*3600000),e2=new Date(s.getTime()+3600000);
-    labels.push(s.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}));
+    labels.push(s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
     const sl=ev.filter(e=>{const t=new Date(e.CreationTime||0);return t>=s&&t<e2;});
     d0.push(sl.filter(e=>e.Activity==='ViewReport').length);
     d1.push(sl.filter(e=>e.Activity==='RefreshDataset').length);
@@ -1216,8 +1214,8 @@ function renderMethodChart(ev){
       else if(ua.includes('Excel')) m='Excel';
       else if(ua.includes('Azure')) m='Azure Client';
       else if(ua.includes('Mozil')) m='Web Browser';
-      else if(ua==='')              m='Sistema/API';
-      else                          m='Outro';}
+      else if(ua==='')              m='System/API';
+      else                          m='Other';}
     counts[m]=(counts[m]||0)+1;
   });
   const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
@@ -1229,7 +1227,7 @@ function renderMethodChart(ev){
 function renderArtifactChart(ev){
   if(!artifactChart) return;
   const counts={};
-  ev.forEach(e=>{const k=e.ArtifactKind||e.ObjectType||'Outro';counts[k]=(counts[k]||0)+1;});
+  ev.forEach(e=>{const k=e.ArtifactKind||e.ObjectType||'Other';counts[k]=(counts[k]||0)+1;});
   const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
   artifactChart.data.labels=sorted.map(x=>x[0]);
   artifactChart.data.datasets[0].data=sorted.map(x=>x[1]);
@@ -1240,7 +1238,7 @@ function renderOperationChart(ev){
   if(!operationChart) return;
   const counts={};
   ev.forEach(e=>{
-    const op=e.Activity||e.OperationName||'Outro';
+    const op=e.Activity||e.OperationName||'Other';
     counts[op]=(counts[op]||0)+1;
   });
   const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,12);
@@ -1274,21 +1272,21 @@ function renderRankings(ev){
   renderRankList('rankUsers',   topN(ev,e=>e.UserId||e.UserName||''),'#00ff9f');
   renderRankList('rankWs',      topN(ev,e=>e.WorkSpaceName||e.WorkspaceName||''),'#a855f7');
   renderRankList('rankFails',   topN(ev.filter(e=>e.IsSuccess===false),e=>e.Activity||'',10),'#ef4444');
-  renderRankList('rankExternal',topN(ev.filter(e=>e.Activity==='ConnectFromExternalApplication'),e=>e.AppName||e.UserAgent||'App desconhecida',10),'#00ff9f');
+  renderRankList('rankExternal',topN(ev.filter(e=>e.Activity==='ConnectFromExternalApplication'),e=>e.AppName||e.UserAgent||'Unknown app',10),'#00ff9f');
 }
 
 function opBadge(op){
   op=op||'';
-  if(op==='ViewReport')                    return `<span class="badge b-view">Ver</span>`;
+  if(op==='ViewReport')                    return `<span class="badge b-view">View</span>`;
   if(op==='RefreshDataset')                return `<span class="badge b-refresh">Refresh</span>`;
   if(op.toLowerCase().includes('export'))  return `<span class="badge b-export">Export</span>`;
-  if(op==='ConnectFromExternalApplication')return `<span class="badge b-connect">Externo</span>`;
+  if(op==='ConnectFromExternalApplication')return `<span class="badge b-connect">External</span>`;
   return `<span class="badge b-other">${op.length>16?op.substring(0,14)+'…':op}</span>`;
 }
 
 function renderTable(ev){
   const tbl=document.getElementById('tbl');
-  if(!ev.length){tbl.innerHTML='<div class="empty">Sem eventos com os filtros actuais</div>';return;}
+  if(!ev.length){tbl.innerHTML='<div class="empty">No events matching the current filters</div>';return;}
   const MAX_EVENTS_FOR_TABLE = 5000;
   const source = ev.length > MAX_EVENTS_FOR_TABLE ? ev.slice(-MAX_EVENTS_FOR_TABLE) : ev;
   const sorted=[...source].sort((a,b)=>{
@@ -1302,17 +1300,17 @@ function renderTable(ev){
   _currentActivityRows = ev;
   tbl.innerHTML=`<table>
     <thead><tr>
-      <th onclick="sortBy('CreationTime')">Hora${sa('CreationTime')}</th>
-      <th onclick="sortBy('Activity')">Operação${sa('Activity')}</th>
-      <th onclick="sortBy('UserId')">Utilizador${sa('UserId')}</th>
+      <th onclick="sortBy('CreationTime')">Time${sa('CreationTime')}</th>
+      <th onclick="sortBy('Activity')">Operation${sa('Activity')}</th>
+      <th onclick="sortBy('UserId')">User${sa('UserId')}</th>
       <th onclick="sortBy('ReportName')">Item${sa('ReportName')}</th>
       <th onclick="sortBy('WorkSpaceName')">Workspace${sa('WorkSpaceName')}</th>
-      <th onclick="sortBy('ConsumptionMethod')">Método${sa('ConsumptionMethod')}</th>
+      <th onclick="sortBy('ConsumptionMethod')">Method${sa('ConsumptionMethod')}</th>
       <th onclick="sortBy('ClientIP')">IP${sa('ClientIP')}</th>
-      <th onclick="sortBy('IsSuccess')">Estado${sa('IsSuccess')}</th>
+      <th onclick="sortBy('IsSuccess')">Status${sa('IsSuccess')}</th>
     </tr></thead>
     <tbody>${sorted.slice(0,500).map(e=>{
-      const ts  =e.CreationTime?new Date(e.CreationTime).toLocaleString('pt-PT'):'—';
+      const ts  =e.CreationTime?new Date(e.CreationTime).toLocaleString('en-GB'):'—';
       const op  =e.Activity||e.OperationName||'—';
       const user=e.UserId||e.UserName||'—';
       const item=e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||'—';
@@ -1328,11 +1326,11 @@ function renderTable(ev){
         <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${ws}</td>
         <td style="font-size:10px;color:var(--dim)">${met}</td>
         <td style="font-size:10px;color:var(--dim)">${ip}</td>
-        <td>${ok?'<span style="color:var(--success)">✓</span>':'<span style="color:var(--danger)">✗ Falhou</span>'}</td>
+        <td>${ok?'<span style="color:var(--success)">✓</span>':'<span style="color:var(--danger)">✗ Failed</span>'}</td>
       </tr>`;
     }).join('')}</tbody>
   </table>
-  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} eventos${ev.length>source.length?' (limitado aos últimos '+source.length+' eventos)':''}</div>`:''}`;
+  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 500 of ${sorted.length} events${ev.length>source.length?' (limited to last '+source.length+' events)':''}</div>`:''}`;
 }
 
 function sortBy(col){
@@ -1360,7 +1358,7 @@ function openDrill(tp) {
   _drillTp      = tp;
   _drillCache   = {};   // clear cache only when opening a NEW timepoint
   _drillFilters = {};
-  document.getElementById('drillTp').textContent = new Date(tp).toLocaleString('pt-PT');
+  document.getElementById('drillTp').textContent = new Date(tp).toLocaleString('en-GB');
   document.getElementById('drillOverlay').classList.add('open');
   // Reset to interactive tab when opening new timepoint
   _drillMode = 'interactive';
@@ -1380,7 +1378,7 @@ function switchDrillTab(mode) {
   document.querySelectorAll('.drill-tab').forEach(t => t.classList.remove('active'));
   document.getElementById('dtab-'+(mode==='interactive'?'int':'bg')).classList.add('active');
   document.getElementById('drillTitle').textContent =
-    mode === 'interactive' ? '⚡ Operações Interactive' : '⏱ Operações Background';
+    mode === 'interactive' ? '⚡ Interactive Operations' : '⏱ Background Operations';
   loadDrillData(mode);
 }
 
@@ -1395,7 +1393,7 @@ async function loadDrillData(mode) {
     return;
   }
 
-  body.innerHTML = '<div class="drill-spin"><span class="spin"></span> A carregar operações...</div>';
+  body.innerHTML = '<div class="drill-spin"><span class="spin"></span> Loading operations...</div>';
 
   try {
     const data = await api('/api/timepoint', { timepoint: _drillTp, mode });
@@ -1404,18 +1402,18 @@ async function loadDrillData(mode) {
     buildFilterUI(_drillCache[cacheKey], mode);
     applyDrillFilters(mode);
   } catch(e) {
-    body.innerHTML = `<div class="drill-empty">Erro: ${e.message}</div>`;
+    body.innerHTML = `<div class="drill-empty">Error: ${e.message}</div>`;
   }
 }
 
 // Build filter pills from actual data values
 function buildFilterUI(rows, mode) {
   const row = document.getElementById('drillFilterRow');
-  if (!rows.length) { row.innerHTML = '<span class="dim-label">Filtrar:</span><span style="font-size:10px;color:var(--dim)">Sem dados</span>'; return; }
+  if (!rows.length) { row.innerHTML = '<span class="dim-label">Filter:</span><span style="font-size:10px;color:var(--dim)">No data</span>'; return; }
 
   // Build unique values per field
   const fields = ALL_DIMS;
-  let html = '<span class="dim-label">Filtrar:</span>';
+  let html = '<span class="dim-label">Filter:</span>';
 
   fields.forEach(field => {
     const vals = [...new Set(rows.map(r => r[field]||'—').filter(v=>v&&v!=='—'))].sort();
@@ -1427,7 +1425,7 @@ function buildFilterUI(rows, mode) {
         ${DIM_LABELS[field]}${_drillFilters[field].size>0?` <span style="background:var(--warn);color:#000;border-radius:10px;font-size:9px;padding:0 5px;margin-left:3px">${_drillFilters[field].size}</span>`:''}
       </button>
       <div id="fdd-${field}" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:500;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.6)">
-        <input type="text" placeholder="Pesquisar..." onInput="filterFdd('fdd-${field}', this.value)"
+        <input type="text" placeholder="Search..." onInput="filterFdd('fdd-${field}', this.value)"
           style="width:100%;background:var(--surface2);border:none;border-bottom:1px solid var(--border);padding:7px 10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none">
         <div style="max-height:180px;overflow-y:auto">
           ${vals.map(v=>`<div class="ms-item${_drillFilters[field].has(v)?' checked':''}" onclick="toggleFlt('${field}','${v.replace(/'/g,"\'")}','${mode}')" data-val="${v.replace(/"/g,'&quot;')}">
@@ -1436,15 +1434,15 @@ function buildFilterUI(rows, mode) {
           </div>`).join('')}
         </div>
         <div class="ms-footer">
-          <button onclick="clearFld('${field}','${mode}')">Limpar</button>
-          <button onclick="toggleFilterDropdown('fdd-${field}')">Fechar</button>
+          <button onclick="clearFld('${field}','${mode}')">Clear</button>
+          <button onclick="toggleFilterDropdown('fdd-${field}')">Close</button>
         </div>
       </div>
     </div>`;
   });
 
   if (Object.values(_drillFilters).some(s=>s.size>0)) {
-    html += `<button class="flt-clear" onclick="clearAllFlt('${mode}')">✕ Limpar tudo</button>`;
+    html += `<button class="flt-clear" onclick="clearAllFlt('${mode}')">✕ Clear all</button>`;
   }
 
   row.innerHTML = html;
@@ -1514,8 +1512,8 @@ function applyDrillFilters(mode) {
 // Dimension state
 const ALL_DIMS = ['operation','user','item','workspace','item_kind','status','billing_type'];
 const DIM_LABELS = {
-  operation:'Operação', user:'Utilizador', item:'Item',
-  workspace:'Workspace', item_kind:'Tipo', status:'Estado', billing_type:'Billing Type'
+  operation:'Operation', user:'User', item:'Item',
+  workspace:'Workspace', item_kind:'Type', status:'Status', billing_type:'Billing Type'
 };
 let _activeDims = new Set(['operation']);
 let _lastRows   = [];
@@ -1566,7 +1564,7 @@ function renderDrillTable(rows, mode) {
   const body = document.getElementById('drillBody');
 
   if (!rows.length) {
-    body.innerHTML = '<div class="drill-empty">Sem operações para este timepoint</div>';
+    body.innerHTML = '<div class="drill-empty">No operations for this timepoint</div>';
     return;
   }
 
@@ -1594,7 +1592,7 @@ function renderDrillTable(rows, mode) {
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid ${color}">
       <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Total CU (s)</div>
       <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:${color}">${totCu.toFixed(2)}s</div>
-      <div style="font-size:9px;color:var(--dim);margin-top:2px">${grouped.length} grupos</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:2px">${grouped.length} groups</div>
     </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--cu)">
       <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">TP CU (s)</div>
@@ -1602,20 +1600,20 @@ function renderDrillTable(rows, mode) {
       <div style="font-size:9px;color:var(--dim);margin-top:2px">timepoint</div>
     </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--purple)">
-      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Duração (s)</div>
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Duration (s)</div>
       <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--purple)">${totDur.toFixed(1)}s</div>
       <div style="font-size:9px;color:var(--dim);margin-top:2px">total</div>
     </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--warn)">
-      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">% Capacidade</div>
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">% Capacity</div>
       <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--warn)">${totPct.toFixed(2)}%</div>
-      <div style="font-size:9px;color:var(--dim);margin-top:2px">soma</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:2px">sum</div>
     </div>
   </div>`;
 
   body.innerHTML = `
     <div class="hint-click" style="text-align:left;padding:4px 0 12px">
-      💡 ${rows.length} operações → ${grouped.length} grupos por: <strong style="color:var(--cu)">${dims.map(d=>DIM_LABELS[d]).join(' + ')}</strong>
+      💡 ${rows.length} operations → ${grouped.length} groups by: <strong style="color:var(--cu)">${dims.map(d=>DIM_LABELS[d]).join(' + ')}</strong>
     </div>
     ${metricCards}
     <div style="overflow-x:auto">
@@ -1624,8 +1622,8 @@ function renderDrillTable(rows, mode) {
         ${dimHeaders}
         <th>Total CU (s)</th>
         <th>TP CU (s)</th>
-        <th>Duração (s)</th>
-        <th>% Capacidade</th>
+        <th>Duration (s)</th>
+        <th>% Capacity</th>
       </tr></thead>
       <tbody>
         ${grouped.map(r => `<tr>
@@ -1655,7 +1653,7 @@ function initRefCharts(){
   refHourChart = new Chart(document.getElementById('refHourChart').getContext('2d'),{
     type:'bar',
     data:{labels:[...Array(24)].map((_,i)=>String(i).padStart(2,'0')+'h'),
-          datasets:[{label:'Refreshes configurados',data:Array(24).fill(0),backgroundColor:'rgba(0,212,255,0.5)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2}]},
+          datasets:[{label:'Configured Refreshes',data:Array(24).fill(0),backgroundColor:'rgba(0,212,255,0.5)',borderColor:'#00d4ff',borderWidth:1,borderRadius:2}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       scales:{x:{ticks:tk,grid:{color:gc}},y:{ticks:tk,grid:{color:gc},beginAtZero:true}}}
   });
@@ -1676,20 +1674,20 @@ function initRefCharts(){
 
 async function loadRefreshes(){
   const btn = document.getElementById('btnRef');
-  btn.disabled=true; btn.innerHTML='<span class="spin"></span>A carregar...';
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span>Loading...';
   try {
     const data = await api('/api/refreshes', {});
     _refAll = data.datasets || [];
     document.getElementById('refInfo').style.display='flex';
     document.getElementById('refCount').textContent = _refAll.length.toLocaleString();
-    document.getElementById('refTime').textContent  = 'às '+new Date().toLocaleTimeString('pt-PT');
+    document.getElementById('refTime').textContent  = 'at '+new Date().toLocaleTimeString('en-GB');
     // Build filter dropdowns
     buildRefFilters();
     applyRefFilters();
   } catch(e) {
-    alert('Erro: '+e.message);
+    alert('Error: '+e.message);
   }
-  btn.disabled=false; btn.innerHTML='↻ Carregar Refreshes';
+  btn.disabled=false; btn.innerHTML='↻ Load Refreshes';
 }
 
 function buildRefFilters(){
@@ -1815,7 +1813,7 @@ function renderRefRankings(data){
 
 function renderRefTable(data){
   const tbl = document.getElementById('refTbl');
-  if(!data.length){tbl.innerHTML='<div class="empty">Sem dados</div>';return;}
+  if(!data.length){tbl.innerHTML='<div class="empty">No data</div>';return;}
 
   const sorted = [...data].sort((a,b)=>{
     let va=a[_refSort]??-1, vb=b[_refSort]??-1;
@@ -1830,33 +1828,35 @@ function renderRefTable(data){
   const statusBadge = s => {
     if(!s||s==='') return '<span style="color:var(--dim);font-size:10px">—</span>';
     if(s==='Completed') return '<span style="color:var(--success);font-size:10px">✓ OK</span>';
-    if(s==='Failed')    return '<span style="color:var(--danger);font-size:10px">✗ Falhou</span>';
+    if(s==='Failed')    return '<span style="color:var(--danger);font-size:10px">✗ Failed</span>';
     return `<span style="color:var(--dim);font-size:10px">${s}</span>`;
   };
 
   const schedBadge = r => {
-    if(r.schedule_enabled) return '<span style="background:rgba(0,212,255,.1);color:var(--cu);padding:2px 6px;border-radius:3px;font-size:9px">ACTIVO</span>';
-    if(r.schedule_days)    return '<span style="background:rgba(100,116,139,.1);color:var(--dim);padding:2px 6px;border-radius:3px;font-size:9px">INACTIVO</span>';
+    if(r.schedule_enabled) return '<span style="background:rgba(0,212,255,.1);color:var(--cu);padding:2px 6px;border-radius:3px;font-size:9px">ACTIVE</span>';
+    if(r.schedule_days)    return '<span style="background:rgba(100,116,139,.1);color:var(--dim);padding:2px 6px;border-radius:3px;font-size:9px">INACTIVE</span>';
     return '<span style="color:var(--dim);font-size:10px">—</span>';
   };
 
   _currentRefRows = data;
   tbl.innerHTML = `<table>
     <thead><tr>
+      <th onclick="refSortBy('workspace')">Workspace${sa('workspace')}</th>
       <th onclick="refSortBy('name')">Dataset${sa('name')}</th>
-      <th onclick="refSortBy('configured_by')">Configurado por${sa('configured_by')}</th>
+      <th onclick="refSortBy('configured_by')">Configured By${sa('configured_by')}</th>
       <th onclick="refSortBy('schedule_enabled')">Schedule${sa('schedule_enabled')}</th>
-      <th onclick="refSortBy('refreshes_per_day')">Ref/Dia${sa('refreshes_per_day')}</th>
-      <th onclick="refSortBy('schedule_times')">Horários${sa('schedule_times')}</th>
-      <th onclick="refSortBy('schedule_days')">Dias${sa('schedule_days')}</th>
-      <th onclick="refSortBy('average_duration')">Dur. Média${sa('average_duration')}</th>
-      <th onclick="refSortBy('daily_load_min')">Carga/Dia${sa('daily_load_min')}</th>
+      <th onclick="refSortBy('refreshes_per_day')">Ref/Day${sa('refreshes_per_day')}</th>
+      <th onclick="refSortBy('schedule_times')">Times${sa('schedule_times')}</th>
+      <th onclick="refSortBy('schedule_days')">Days${sa('schedule_days')}</th>
+      <th onclick="refSortBy('average_duration')">Avg Duration${sa('average_duration')}</th>
+      <th onclick="refSortBy('daily_load_min')">Load/Day${sa('daily_load_min')}</th>
       <th onclick="refSortBy('refresh_count')">Total Ref.${sa('refresh_count')}</th>
-      <th onclick="refSortBy('refresh_failures')">Falhas${sa('refresh_failures')}</th>
-      <th onclick="refSortBy('last_status')">Último Estado${sa('last_status')}</th>
-      <th onclick="refSortBy('last_end')">Último Refresh${sa('last_end')}</th>
+      <th onclick="refSortBy('refresh_failures')">Failures${sa('refresh_failures')}</th>
+      <th onclick="refSortBy('last_status')">Last Status${sa('last_status')}</th>
+      <th onclick="refSortBy('last_end')">Last Refresh${sa('last_end')}</th>
     </tr></thead>
     <tbody>${sorted.slice(0,500).map(r=>`<tr>
+      <td style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)" title="${r.workspace}">${r.workspace||'—'}</td>
       <td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cu)" title="${r.name}">${r.name}</td>
       <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${r.configured_by||'—'}</td>
       <td>${schedBadge(r)}</td>
@@ -1868,10 +1868,10 @@ function renderRefTable(data){
       <td style="font-size:10px;text-align:center">${r.refresh_count||0}</td>
       <td style="font-size:10px;text-align:center;${r.refresh_failures>0?'color:var(--danger)':''}">${r.refresh_failures||0}</td>
       <td>${statusBadge(r.last_status)}</td>
-      <td style="font-size:10px;color:var(--dim)">${r.last_end?new Date(r.last_end).toLocaleString('pt-PT'):'—'}</td>
+      <td style="font-size:10px;color:var(--dim)">${r.last_end?new Date(r.last_end).toLocaleString('en-GB'):'—'}</td>
     </tr>`).join('')}</tbody>
   </table>
-  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">A mostrar 500 de ${sorted.length} datasets</div>`:''}`;
+  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 500 of ${sorted.length} datasets</div>`:''}`;
 }
 
 function refSortBy(col){
@@ -1901,9 +1901,9 @@ function exportRowsToExcel(filename, rows, cols){
 }
 
 function exportCapacityToExcel(){
-  if(!_capData.length){alert('Sem dados para exportar.');return;}
+  if(!_capData.length){alert('No data to export.');return;}
   exportRowsToExcel('Fabric_Capacity_Details.xls', _capData, [
-    {label:'Timepoint', value:d=>new Date(d.timepoint).toLocaleString('pt-PT')},
+    {label:'Timepoint', value:d=>new Date(d.timepoint).toLocaleString('en-GB')},
     {label:'Interactive %', value:d=>((d.interactive||0)*100).toFixed(2)+'%'},
     {label:'Background %', value:d=>((d.background||0)*100).toFixed(2)+'%'},
     {label:'SKU CU %', value:d=>((d.sku_cu||0)*100).toFixed(2)+'%'}
@@ -1911,48 +1911,49 @@ function exportCapacityToExcel(){
 }
 
 function exportActivityToExcel(){
-  if(!_currentActivityRows.length){alert('Sem dados para exportar.');return;}
+  if(!_currentActivityRows.length){alert('No data to export.');return;}
   exportRowsToExcel('Fabric_Activity_Details.xls', _currentActivityRows, [
-    {label:'Hora', value:e=>e.CreationTime?new Date(e.CreationTime).toLocaleString('pt-PT'):'',},
-    {label:'Operação', value:e=>e.Activity||e.OperationName||''},
-    {label:'Utilizador', value:e=>e.UserId||e.UserName||''},
+    {label:'Time', value:e=>e.CreationTime?new Date(e.CreationTime).toLocaleString('en-GB'):'',},
+    {label:'Operation', value:e=>e.Activity||e.OperationName||''},
+    {label:'User', value:e=>e.UserId||e.UserName||''},
     {label:'Item', value:e=>e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||''},
     {label:'Workspace', value:e=>e.WorkSpaceName||e.WorkspaceName||''},
-    {label:'Método', value:e=>e.ConsumptionMethod||e.UserAgent||''},
+    {label:'Method', value:e=>e.ConsumptionMethod||e.UserAgent||''},
     {label:'IP', value:e=>e.ClientIP||''},
-    {label:'Estado', value:e=>e.IsSuccess===false?'Falhou':'OK'}
+    {label:'Status', value:e=>e.IsSuccess===false?'Failed':'OK'}
   ]);
 }
 
 function exportRefreshesToExcel(){
-  if(!_currentRefRows.length){alert('Sem dados para exportar.');return;}
+  if(!_currentRefRows.length){alert('No data to export.');return;}
   exportRowsToExcel('Fabric_Refreshes_Details.xls', _currentRefRows, [
+    {label:'Workspace', value:r=>r.workspace||''},
     {label:'Dataset', value:r=>r.name||''},
-    {label:'Configurado por', value:r=>r.configured_by||''},
-    {label:'Schedule', value:r=>r.schedule_enabled?'Activo':r.schedule_days?'Inactivo':'Sem schedule'},
-    {label:'Ref/Dia', value:r=>r.refreshes_per_day!=null?r.refreshes_per_day:''},
-    {label:'Horários', value:r=>r.schedule_times||''},
-    {label:'Dias', value:r=>r.schedule_days||''},
-    {label:'Dur. Média', value:r=>r.average_duration!=null?r.average_duration.toFixed(2):''},
-    {label:'Carga/Dia', value:r=>r.daily_load_min!=null?r.daily_load_min.toFixed(1):''},
-    {label:'Total Refresh', value:r=>r.refresh_count||0},
-    {label:'Falhas', value:r=>r.refresh_failures||0},
-    {label:'Último Estado', value:r=>r.last_status||''},
-    {label:'Último Refresh', value:r=>r.last_end?new Date(r.last_end).toLocaleString('pt-PT'):''}
+    {label:'Configured By', value:r=>r.configured_by||''},
+    {label:'Schedule', value:r=>r.schedule_enabled?'Active':r.schedule_days?'Inactive':'No schedule'},
+    {label:'Ref/Day', value:r=>r.refreshes_per_day!=null?r.refreshes_per_day:''},
+    {label:'Times', value:r=>r.schedule_times||''},
+    {label:'Days', value:r=>r.schedule_days||''},
+    {label:'Avg Duration', value:r=>r.average_duration!=null?r.average_duration.toFixed(2):''},
+    {label:'Load/Day', value:r=>r.daily_load_min!=null?r.daily_load_min.toFixed(1):''},
+    {label:'Total Refreshes', value:r=>r.refresh_count||0},
+    {label:'Failures', value:r=>r.refresh_failures||0},
+    {label:'Last Status', value:r=>r.last_status||''},
+    {label:'Last Refresh', value:r=>r.last_end?new Date(r.last_end).toLocaleString('en-GB'):''}
   ]);
 }
 
 function exportDrillToExcel(){
   const rows = _lastRows || [];
-  if(!rows.length){alert('Sem dados para exportar.');return;}
+  if(!rows.length){alert('No data to export.');return;}
   const dims = [..._activeDims];
   const grouped = groupRows(rows, dims);
   exportRowsToExcel('Fabric_Timepoint_Detail.xls', grouped, [
     ...dims.map(d=>({label:DIM_LABELS[d], value:r=>r[d]||''})),
     {label:'Total CU (s)', value:r=>r.total_cu.toFixed(2)},
     {label:'TP CU (s)', value:r=>r.timepoint_cu.toFixed(2)},
-    {label:'Duração (s)', value:r=>r.duration.toFixed(2)},
-    {label:'% Capacidade', value:r=>((r.pct_capacity||0)*100).toFixed(2)+'%'}
+    {label:'Duration (s)', value:r=>r.duration.toFixed(2)},
+    {label:'% Capacity', value:r=>((r.pct_capacity||0)*100).toFixed(2)+'%'}
   ]);
 }
 

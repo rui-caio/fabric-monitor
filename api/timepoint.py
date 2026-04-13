@@ -119,12 +119,12 @@ def handle_timepoint(payload):
     mode  = payload.get("mode", "interactive")
 
     if not tp:
-        raise Exception("timepoint em falta")
+        raise Exception("timepoint missing")
 
     try:
         dt = datetime.fromisoformat(tp)
     except ValueError:
-        raise Exception(f"Formato de timepoint inválido: {tp}")
+        raise Exception(f"Invalid timepoint format: {tp}")
 
     y, mo, d  = dt.year, dt.month, dt.day
     h, mi, s  = dt.hour, dt.minute, dt.second
@@ -198,7 +198,7 @@ def handle_timepoint(payload):
                     "pct_capacity": row.get("[Sumv__of_base_capacity]", 0) or 0,
                 })
     except (KeyError, IndexError) as ex:
-        raise Exception(f"Erro ao processar resposta: {ex}")
+        raise Exception(f"Error processing response: {ex}")
 
-    print(f"  Timepoint {tp} [{mode}]: {len(rows)} operações")
+    print(f"  Timepoint {tp} [{mode}]: {len(rows)} operations")
     return {"rows": rows, "timepoint": tp, "mode": mode}

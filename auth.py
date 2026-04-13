@@ -7,8 +7,8 @@ import sys
 try:
     import msal
 except ImportError:
-    print("\n  ERRO: biblioteca 'msal' não encontrada.")
-    print("  Instala com: pip install msal\n")
+    print("\n  ERROR: 'msal' library not found.")
+    print("  Install with: pip install msal\n")
     sys.exit(1)
 
 from config import TENANT_ID, PUBLIC_CLIENT_ID, SCOPES
@@ -37,23 +37,23 @@ def get_token():
 
         flow = app.initiate_device_flow(scopes=SCOPES)
         if "user_code" not in flow:
-            raise Exception("Falha Device Code: " + json.dumps(flow))
+            raise Exception("Device Code flow failed: " + json.dumps(flow))
 
         print("\n" + "─" * 60)
-        print("  AUTENTICAÇÃO NECESSÁRIA")
+        print("  AUTHENTICATION REQUIRED")
         print("─" * 60)
-        print(f"\n  1. Abre: https://microsoft.com/devicelogin")
-        print(f"  2. Código: {flow['user_code']}")
-        print(f"\n  À espera...\n")
+        print(f"\n  1. Open: https://microsoft.com/devicelogin")
+        print(f"  2. Code: {flow['user_code']}")
+        print(f"\n  Waiting...\n")
 
         result = app.acquire_token_by_device_flow(flow)
         if "access_token" not in result:
-            raise Exception("Falhou: " + result.get("error_description", str(result)))
+            raise Exception("Failed: " + result.get("error_description", str(result)))
 
         accounts = get_app().get_accounts()
         if accounts:
             _auth_info["account"] = accounts[0].get("username", "")
-        print(f"  ✓ Autenticado como {_auth_info['account']}\n")
+        print(f"  ✓ Authenticated as {_auth_info['account']}\n")
         return result["access_token"]
 
 

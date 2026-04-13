@@ -2,7 +2,7 @@ import os
 import sys
 
 def _load_env(path=None):
-    """Carrega variáveis de um ficheiro .env para os.environ (sem dependências externas)."""
+    """Loads variables from a .env file into os.environ (no external dependencies)."""
     if path is None:
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     try:
@@ -27,14 +27,15 @@ CAPACITY_ID = os.environ.get("CAPACITY_ID", "")
 METRICS_WS  = os.environ.get("METRICS_WS", "")
 METRICS_DS  = os.environ.get("METRICS_DS", "")
 PORT        = int(os.environ.get("PORT", "8765"))
+ORG_NAME    = os.environ.get("ORG_NAME", "")
 
 _missing = [k for k, v in {
     "TENANT_ID": TENANT_ID, "CAPACITY_ID": CAPACITY_ID,
     "METRICS_WS": METRICS_WS, "METRICS_DS": METRICS_DS,
 }.items() if not v]
 if _missing:
-    print(f"\n  ERRO: variáveis não configuradas: {', '.join(_missing)}")
-    print("  Copia .env.example para .env e preenche os valores.\n")
+    print(f"\n  ERROR: unconfigured variables: {', '.join(_missing)}")
+    print("  Copy .env.example to .env and fill in the values.\n")
     sys.exit(1)
 
 SCOPES           = ["https://analysis.windows.net/powerbi/api/.default"]

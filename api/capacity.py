@@ -71,7 +71,7 @@ ORDER BY 'Timepoints'[Timepoint] ASC"""
                     "cu_limit":        row.get("[CU_limit]", 0) or 0,
                 })
     except (KeyError, IndexError) as ex:
-        raise Exception(f"Erro ao processar resposta: {ex} | {str(data)[:300]}")
+        raise Exception(f"Error processing response: {ex} | {str(data)[:300]}")
 
-    print(f"  Capacity: {len(rows)} timepoints carregados")
+    print(f"  Capacity: {len(rows)} timepoints loaded")
     return {"timepoints": rows}

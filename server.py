@@ -4,7 +4,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from auth import get_app, get_token
-from config import TENANT_ID, PORT
+from config import TENANT_ID, PORT, ORG_NAME
 from api.activity  import handle_activity
 from api.capacity  import handle_capacity
 from api.timepoint import handle_timepoint
@@ -15,7 +15,7 @@ _auth_thread_lock = threading.Lock()
 
 _here = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(_here, "static", "index.html"), encoding="utf-8") as _f:
-    _HTML = _f.read().encode()
+    _HTML = _f.read().replace("{{ORG_NAME}}", ORG_NAME).encode()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -63,9 +63,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/capacity":    self.send_json(200, handle_capacity(payload))
             elif self.path == "/api/timepoint":   self.send_json(200, handle_timepoint(payload))
             elif self.path == "/api/refreshes":   self.send_json(200, handle_refreshes(payload))
-            else:                                 self.send_json(404, {"error": "Endpoint desconhecido"})
+            else:                                 self.send_json(404, {"error": "Unknown endpoint"})
         except Exception as e:
-            print(f"  ERRO: {e}")
+            print(f"  ERROR: {e}")
             self.send_json(500, {"error": str(e)})
 
     def _auth_status(self):
@@ -92,7 +92,7 @@ def _authenticate_background():
     try:
         get_token()
     except Exception as e:
-        print(f"  AVISO: {e}")
+        print(f"  WARNING: {e}")
 
 
 def _ensure_auth_thread():
@@ -108,13 +108,17 @@ def main():
     print("  FABRIC ACTIVITY MONITOR")
     print("═" * 60)
     print(f"\n  Tenant: {TENANT_ID}")
-    print(f"\n  ✓ Proxy activo — abre o browser em: http://localhost:{PORT}\n")
-    print("  Autenticando em segundo plano...\n")
+    import socket
+    local_ip = socket.gethostbyname(socket.gethostname())
+    print(f"\n  ✓ Proxy active")
+    print(f"    Local:  http://localhost:{PORT}")
+    print(f"    Network: http://{local_ip}:{PORT}\n")
+    print("  Authenticating in background...\n")
 
     _ensure_auth_thread()
 
-    server = HTTPServer(("127.0.0.1", PORT), Handler)
+    server = HTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n  Proxy parado.")
+        print("\n  Proxy stopped.")

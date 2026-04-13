@@ -79,7 +79,7 @@ def handle_activity(payload):
 
             cached_events = _load_chunk(cursor, chunk_end)
             if cached_events is not None:
-                print(f"  Cache hit: {cursor.isoformat()} → {chunk_end.isoformat()} ({len(cached_events)} eventos)")
+                print(f"  Cache hit: {cursor.isoformat()} → {chunk_end.isoformat()} ({len(cached_events)} events)")
                 events.extend(cached_events)
             else:
                 events_chunk = _fetch_chunk(cursor, chunk_end, auth_token)
@@ -132,7 +132,7 @@ def handle_activity(payload):
         all_events = [e for e in all_events if _matches_filters(e, filters)]
 
     original_count = len(all_events)
-    print(f"  Activity API: {original_count} eventos carregados")
+    print(f"  Activity API: {original_count} events loaded")
 
     filter_options = {
         "type": sorted({
@@ -168,7 +168,7 @@ def handle_activity(payload):
             returned_events = all_events[-MAX_EVENTS:]
             truncated = True
             warning = (warning + ' ' if warning else '') + (
-                f"O conjunto é muito grande; retornados apenas os últimos {MAX_EVENTS} eventos para o navegador.")
+                f"Dataset too large; only the last {MAX_EVENTS} events were returned to the browser.")
 
     result = {
         "activityEventEntities": returned_events,
