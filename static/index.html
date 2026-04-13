@@ -155,10 +155,11 @@
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
   ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 
-  /* Drill-down panel */
-  .drill-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;align-items:flex-end;justify-content:center}
+  body.drill-open{overflow:hidden}
+  /* Drill-down panel (full viewport) */
+  .drill-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;align-items:stretch;justify-content:stretch}
   .drill-overlay.open{display:flex}
-  .drill-panel{background:var(--surface);border-top:1px solid var(--border);border-radius:12px 12px 0 0;width:100%;max-height:80vh;display:flex;flex-direction:column;padding:0;overflow:hidden}
+  .drill-panel{background:var(--surface);border:none;border-radius:0;width:100%;height:100%;max-height:100vh;display:flex;flex-direction:column;padding:0;overflow:hidden;box-shadow:none}
   .drill-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0}
   .drill-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--bright)}
   .drill-tp{font-size:10px;color:var(--dim);margin-top:2px}
@@ -186,7 +187,7 @@
   .dim-pill.active{background:rgba(0,212,255,.12);border-color:var(--cu);color:var(--cu)}
   .dim-pill input{display:none}
   .dim-sep{width:1px;height:16px;background:var(--border);margin:0 4px}
-  .drill-filter-row{display:flex;align-items:center;gap:8px;padding:10px 0 2px;flex-wrap:wrap}
+  .drill-filter-row{display:flex;align-items:flex-end;gap:10px;padding:10px 0 2px;flex-wrap:wrap}
   .flt-pill{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);font-size:10px;cursor:pointer;background:var(--surface2);color:var(--dim);transition:all .15s;user-select:none;white-space:nowrap}
   .flt-pill:hover{border-color:var(--warn);color:var(--warn)}
   .flt-pill.active{background:rgba(245,158,11,.12);border-color:var(--warn);color:var(--warn)}
@@ -618,15 +619,16 @@
 
 <!-- Drill-down panel -->
 <div class="drill-overlay" id="drillOverlay" onclick="closeDrill(event)">
-  <div class="drill-panel">
+  <div class="drill-panel" onclick="event.stopPropagation()">
     <div class="drill-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
       <div>
         <div class="drill-title" id="drillTitle">Timepoint Detail</div>
         <div class="drill-tp" id="drillTp"></div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-s" onclick="closeDrillPanel()">← Back to chart</button>
         <button class="btn btn-s" onclick="exportDrillToExcel()">📄 Excel</button>
-        <button class="drill-close" onclick="closeDrillPanel()">✕</button>
+        <button class="drill-close" onclick="closeDrillPanel()" title="Close">✕</button>
       </div>
     </div>
     <div class="drill-tabs">
@@ -1063,6 +1065,12 @@ async function doRefresh(){
 const _msState={};
 const _refMsIds=new Set(['rWs','rDs','rOwn']);
 const _invMsIds=new Set(['iWs','iType']);
+const ALL_DIMS = ['operation','user','item','workspace','item_kind','status','billing_type'];
+const DIM_LABELS = {
+  operation:'Operation', user:'User', item:'Item',
+  workspace:'Workspace', item_kind:'Type', status:'Status', billing_type:'Billing Type'
+};
+const _drillMsIds = new Set(ALL_DIMS.map(f => 'dr-' + f));
 function buildMultiSelect(containerId,values){
   const id=containerId.replace('ms-','');
   if(!_msState[id]) _msState[id]=new Set();
@@ -1116,6 +1124,13 @@ function toggleMs(id,v){
     }
   });
   updateMsLabel(id);
+  if(_drillMsIds.has(id)){
+    const field = id.replace(/^dr-/,'');
+    if(!_drillFilters[field]) _drillFilters[field] = new Set();
+    _drillFilters[field] = new Set(_msState[id]);
+    applyDrillFilters(_drillMode);
+    return;
+  }
   if(_refMsIds.has(id)) applyRefFilters();
   else if(_invMsIds.has(id)) applyInvFilters();
   else applyFilters();
@@ -1128,6 +1143,13 @@ function selectAll(id){
     item.querySelector('input').checked=true;
   });
   updateMsLabel(id);
+  if(_drillMsIds.has(id)){
+    const field = id.replace(/^dr-/,'');
+    if(!_drillFilters[field]) _drillFilters[field] = new Set();
+    _drillFilters[field] = new Set(_msState[id]);
+    applyDrillFilters(_drillMode);
+    return;
+  }
   if(_refMsIds.has(id)) applyRefFilters();
   else if(_invMsIds.has(id)) applyInvFilters();
   else applyFilters();
@@ -1140,6 +1162,12 @@ function clearMs(id){
     item.querySelector('input').checked=false;
   });
   updateMsLabel(id);
+  if(_drillMsIds.has(id)){
+    const field = id.replace(/^dr-/,'');
+    if(_drillFilters[field]) _drillFilters[field].clear();
+    applyDrillFilters(_drillMode);
+    return;
+  }
   if(_refMsIds.has(id)){ applyRefFilters(); return; }
   if(_invMsIds.has(id)){ applyInvFilters(); return; }
   _activityFilterKey='';
@@ -1495,6 +1523,7 @@ function openDrill(tp) {
   _drillFilters = {};
   document.getElementById('drillTp').textContent = new Date(tp).toLocaleString('en-GB');
   document.getElementById('drillOverlay').classList.add('open');
+  document.body.classList.add('drill-open');
   // Reset to interactive tab when opening new timepoint
   _drillMode = 'interactive';
   switchDrillTab('interactive');
@@ -1502,6 +1531,7 @@ function openDrill(tp) {
 
 function closeDrillPanel() {
   document.getElementById('drillOverlay').classList.remove('open');
+  document.body.classList.remove('drill-open');
 }
 
 function closeDrill(evt) {
@@ -1541,94 +1571,61 @@ async function loadDrillData(mode) {
   }
 }
 
-// Build filter pills from actual data values
+// Build filter multiselects (same ms-wrap pattern as Activity / Inventory)
 function buildFilterUI(rows, mode) {
   const row = document.getElementById('drillFilterRow');
-  if (!rows.length) { row.innerHTML = '<span class="dim-label">Filter:</span><span style="font-size:10px;color:var(--dim)">No data</span>'; return; }
+  if (!rows.length) {
+    row.innerHTML = '<span class="dim-label">Filter:</span><span style="font-size:10px;color:var(--dim)">No data</span>';
+    return;
+  }
 
-  // Build unique values per field
-  const fields = ALL_DIMS;
-  let html = '<span class="dim-label">Filter:</span>';
+  row.innerHTML = '';
+  const lab = document.createElement('span');
+  lab.className = 'dim-label';
+  lab.style.alignSelf = 'center';
+  lab.textContent = 'Filter:';
+  row.appendChild(lab);
 
-  fields.forEach(field => {
+  const flex = document.createElement('div');
+  flex.style.cssText = 'display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;flex:1;min-width:0';
+  row.appendChild(flex);
+
+  ALL_DIMS.forEach(field => {
     const vals = [...new Set(rows.map(r => r[field]||'—').filter(v=>v&&v!=='—'))].sort();
     if (!vals.length) return;
     if (!_drillFilters[field]) _drillFilters[field] = new Set();
+    const msId = 'dr-' + field;
+    _msState[msId] = new Set(_drillFilters[field]);
 
-    html += `<div style="position:relative;display:inline-block">
-      <button class="flt-pill${_drillFilters[field].size>0?' active':''}" onclick="toggleFilterDropdown('fdd-${field}')" id="fpill-${field}">
-        ${DIM_LABELS[field]}${_drillFilters[field].size>0?` <span style="background:var(--warn);color:#000;border-radius:10px;font-size:9px;padding:0 5px;margin-left:3px">${_drillFilters[field].size}</span>`:''}
-      </button>
-      <div id="fdd-${field}" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:500;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.6)">
-        <input type="text" placeholder="Search..." onInput="filterFdd('fdd-${field}', this.value)"
-          style="width:100%;background:var(--surface2);border:none;border-bottom:1px solid var(--border);padding:7px 10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;outline:none">
-        <div style="max-height:180px;overflow-y:auto">
-          ${vals.map(v=>`<div class="ms-item${_drillFilters[field].has(v)?' checked':''}" onclick="toggleFlt('${field}','${v.replace(/'/g,"\'")}','${mode}')" data-val="${v.replace(/"/g,'&quot;')}">
-            <input type="checkbox" ${_drillFilters[field].has(v)?'checked':''} onclick="event.stopPropagation()">
-            <span class="ms-item-text" title="${v}">${v}</span>
-          </div>`).join('')}
-        </div>
-        <div class="ms-footer">
-          <button onclick="clearFld('${field}','${mode}')">Clear</button>
-          <button onclick="toggleFilterDropdown('fdd-${field}')">Close</button>
-        </div>
-      </div>
-    </div>`;
+    const fg = document.createElement('div');
+    fg.className = 'fg';
+    const lbl = document.createElement('label');
+    lbl.textContent = DIM_LABELS[field];
+    const msWrap = document.createElement('div');
+    msWrap.className = 'ms-wrap';
+    msWrap.id = 'ms-' + msId;
+    fg.appendChild(lbl);
+    fg.appendChild(msWrap);
+    flex.appendChild(fg);
+    buildMultiSelect('ms-' + msId, vals);
   });
 
-  if (Object.values(_drillFilters).some(s=>s.size>0)) {
-    html += `<button class="flt-clear" onclick="clearAllFlt('${mode}')">✕ Clear all</button>`;
+  if (Object.values(_drillFilters).some(s => s.size > 0)) {
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'flt-clear';
+    clearBtn.type = 'button';
+    clearBtn.textContent = '✕ Clear all';
+    clearBtn.onclick = () => clearAllFlt(mode);
+    clearBtn.style.alignSelf = 'center';
+    row.appendChild(clearBtn);
   }
-
-  row.innerHTML = html;
-}
-
-function filterFdd(ddId, q) {
-  document.querySelectorAll(`#${ddId} .ms-item`).forEach(item => {
-    item.style.display = item.dataset.val.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
-  });
-}
-
-function toggleFilterDropdown(id) {
-  // Close others
-  document.querySelectorAll('[id^="fdd-"]').forEach(dd => {
-    if (dd.id !== id) dd.style.display = 'none';
-  });
-  const dd = document.getElementById(id);
-  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
-}
-
-document.addEventListener('click', e => {
-  if (!e.target.closest('[id^="fdd-"]') && !e.target.closest('.flt-pill')) {
-    document.querySelectorAll('[id^="fdd-"]').forEach(dd => dd.style.display = 'none');
-  }
-  if (!e.target.closest('.ms-dropdown') && !e.target.closest('.ms-btn')) {
-    document.querySelectorAll('.ms-dropdown.open').forEach(dd => {
-      dd.classList.remove('open'); dd.previousElementSibling?.classList.remove('open');
-    });
-  }
-});
-
-function toggleFlt(field, val, mode) {
-  if (!_drillFilters[field]) _drillFilters[field] = new Set();
-  if (_drillFilters[field].has(val)) _drillFilters[field].delete(val);
-  else _drillFilters[field].add(val);
-  const cacheKey = _drillTp + '|' + mode;
-  buildFilterUI(_drillCache[cacheKey]||[], mode);
-  applyDrillFilters(mode);
-}
-
-function clearFld(field, mode) {
-  if (_drillFilters[field]) _drillFilters[field].clear();
-  const cacheKey = _drillTp + '|' + mode;
-  buildFilterUI(_drillCache[cacheKey]||[], mode);
-  applyDrillFilters(mode);
 }
 
 function clearAllFlt(mode) {
-  Object.keys(_drillFilters).forEach(k => _drillFilters[k].clear());
+  Object.keys(_drillFilters).forEach(k => { if (_drillFilters[k]) _drillFilters[k].clear(); });
+  _drillMsIds.forEach(mid => { if (_msState[mid]) _msState[mid].clear(); });
   const cacheKey = _drillTp + '|' + mode;
-  buildFilterUI(_drillCache[cacheKey]||[], mode);
+  buildFilterUI(_drillCache[cacheKey] || [], mode);
   applyDrillFilters(mode);
 }
 
@@ -1644,12 +1641,7 @@ function applyDrillFilters(mode) {
   renderDrillTable(rows, mode);
 }
 
-// Dimension state
-const ALL_DIMS = ['operation','user','item','workspace','item_kind','status','billing_type'];
-const DIM_LABELS = {
-  operation:'Operation', user:'User', item:'Item',
-  workspace:'Workspace', item_kind:'Type', status:'Status', billing_type:'Billing Type'
-};
+// Dimension state (group-by pills)
 let _activeDims = new Set(['operation']);
 let _lastRows   = [];
 let _lastMode   = 'interactive';
