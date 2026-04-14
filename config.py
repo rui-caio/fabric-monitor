@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 
@@ -28,6 +29,19 @@ METRICS_WS  = os.environ.get("METRICS_WS", "")
 METRICS_DS  = os.environ.get("METRICS_DS", "")
 PORT        = int(os.environ.get("PORT", "8765"))
 ORG_NAME    = os.environ.get("ORG_NAME", "")
+
+# Display time for UI (optional). Prefer IANA zone (DST-aware); else fixed offset from UTC in hours.
+DISPLAY_TIMEZONE = os.environ.get("DISPLAY_TIMEZONE", "").strip() or None
+_off = os.environ.get("DISPLAY_UTC_OFFSET_HOURS", "").strip()
+try:
+    DISPLAY_UTC_OFFSET_HOURS = float(_off) if _off else None
+except ValueError:
+    DISPLAY_UTC_OFFSET_HOURS = None
+
+FM_DISPLAY_JS = json.dumps(
+    {"timeZone": DISPLAY_TIMEZONE, "utcOffsetHours": DISPLAY_UTC_OFFSET_HOURS},
+    ensure_ascii=False,
+)
 
 _missing = [k for k, v in {
     "TENANT_ID": TENANT_ID, "CAPACITY_ID": CAPACITY_ID,

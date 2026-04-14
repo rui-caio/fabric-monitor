@@ -4,7 +4,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from auth import get_app, get_token
-from config import TENANT_ID, PORT, ORG_NAME
+from config import TENANT_ID, PORT, ORG_NAME, FM_DISPLAY_JS
 from api.activity  import handle_activity
 from api.capacity  import handle_capacity
 from api.timepoint import handle_timepoint
@@ -16,7 +16,12 @@ _auth_thread_lock = threading.Lock()
 
 _here = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(_here, "static", "index.html"), encoding="utf-8") as _f:
-    _HTML = _f.read().replace("{{ORG_NAME}}", ORG_NAME).encode()
+    _HTML = (
+        _f.read()
+        .replace("{{ORG_NAME}}", ORG_NAME)
+        .replace("__FM_DISPLAY__", FM_DISPLAY_JS)
+        .encode()
+    )
 
 
 class Handler(BaseHTTPRequestHandler):

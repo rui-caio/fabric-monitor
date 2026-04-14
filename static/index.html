@@ -253,6 +253,10 @@
         <label>&nbsp;</label>
         <button class="btn btn-p" id="btnCap" onclick="loadCapacity()">↻ Load Capacity</button>
       </div>
+      <div class="fg">
+        <label>&nbsp;</label>
+        <button class="btn btn-s" onclick="exportCapacityToExcel()">📄 Excel</button>
+      </div>
       <div class="data-info" id="capInfo" style="display:none">
         <strong id="capCount">0</strong> timepoints · <span id="capTime"></span>
       </div>
@@ -304,19 +308,6 @@
       </div>
     </div>
 
-    <!-- Tabela de timepoints -->
-    <div class="sec">Timepoint Detail</div>
-    <div class="tc">
-      <div class="th2" style="align-items:center;gap:10px;">
-        <div class="tt">All Timepoints</div>
-        <button class="btn btn-s" onclick="exportCapacityToExcel()">📄 Excel</button>
-        <div class="tn" id="capTcount"></div>
-      </div>
-      <div class="table-scroll" id="capTbl">
-        <div class="empty">Click "Load Capacity" to start</div>
-      </div>
-    </div>
-
   </div>
 
   <!-- ══════════════════════════════════════════════════════ -->
@@ -344,6 +335,7 @@
       </div>
       <div class="fg"><label>Operation type</label><div class="ms-wrap" id="ms-fType"></div></div>
       <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-fWs"></div></div>
+      <div class="fg"><label>Item</label><div class="ms-wrap" id="ms-fItem"></div></div>
       <div class="fg"><label>User</label><div class="ms-wrap" id="ms-fUser"></div></div>
       <div class="fg">
         <label>Status</label>
@@ -655,16 +647,65 @@
 </div><!-- /wrap -->
 
 <script>
+window.FM_DISPLAY = __FM_DISPLAY__;
+function fmHourOfDay(isoOrMs){
+  const d = new Date(isoOrMs);
+  if(isNaN(d.getTime())) return 0;
+  const D = window.FM_DISPLAY || {};
+  if(D.timeZone){
+    const p = new Intl.DateTimeFormat('en-GB',{timeZone:D.timeZone,hour:'numeric',hourCycle:'h23'}).formatToParts(d);
+    const h = p.find(x=>x.type==='hour');
+    return h ? parseInt(h.value,10) : 0;
+  }
+  if(D.utcOffsetHours != null && D.utcOffsetHours !== ''){
+    return new Date(d.getTime() + Number(D.utcOffsetHours) * 3600000).getUTCHours();
+  }
+  return d.getHours();
+}
+function fmtDateTime(isoOrDate){
+  if(isoOrDate == null || isoOrDate === '') return '—';
+  const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+  if(isNaN(d.getTime())) return '—';
+  const D = window.FM_DISPLAY || {};
+  const o = {day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false};
+  if(D.timeZone) return d.toLocaleString('en-GB',{...o,timeZone:D.timeZone});
+  if(D.utcOffsetHours != null && D.utcOffsetHours !== ''){
+    const adj = new Date(d.getTime() + Number(D.utcOffsetHours) * 3600000);
+    return adj.toLocaleString('en-GB',{...o,timeZone:'UTC'});
+  }
+  return d.toLocaleString('en-GB');
+}
+function fmtTimeClock(){
+  return fmtDateTime(new Date());
+}
+function fmtChartAxis(d, withDay){
+  const D = window.FM_DISPLAY || {};
+  if(withDay){
+    if(D.timeZone) return d.toLocaleString('en-GB',{timeZone:D.timeZone,day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+    if(D.utcOffsetHours != null && D.utcOffsetHours !== ''){
+      const adj = new Date(d.getTime() + Number(D.utcOffsetHours) * 3600000);
+      return adj.toLocaleString('en-GB',{timeZone:'UTC',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+    }
+    return d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  }
+  if(D.timeZone) return d.toLocaleTimeString('en-GB',{timeZone:D.timeZone,hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  if(D.utcOffsetHours != null && D.utcOffsetHours !== ''){
+    return new Date(d.getTime() + Number(D.utcOffsetHours) * 3600000).toLocaleTimeString('en-GB',{timeZone:'UTC',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  }
+  return d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function fmtAtClock(){
+  return fmtChartAxis(new Date(), false);
+}
 const P = window.location.origin;
 let timeChart,methodChart,artifactChart,operationChart,hourChart;
 let cuChart,skuChart,breakdownChart,invTypeChart;
-let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySummary=null,_capData=[];
+let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySummary=null,_activityChartAggregates=null,_activityChartAggregatesUnfiltered=null,_activityAggregatesFilterKey='',_capData=[];
 let _currentActivityRows=[];
 let _currentRefRows=[];
 let _invAll=[],_currentInvRows=[],_invSortCol='workspaceName',_invSortAsc=true;
 let _activityStart=null,_activityEnd=null,_activityIsTruncated=false,_activityFilterKey='';
 let _sortCol='CreationTime',_sortAsc=false;
-let _capSortCol='timepoint',_capSortAsc=false;
 
 // ── Tabs ──────────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -894,8 +935,7 @@ async function loadCapacity(){
 
     document.getElementById('capInfo').style.display='flex';
     document.getElementById('capCount').textContent=_capData.length.toLocaleString();
-    document.getElementById('capTime').textContent=`at ${new Date().toLocaleTimeString('en-GB')}`;
-    document.getElementById('capTcount').textContent=_capData.length+' timepoints';
+    document.getElementById('capTime').textContent=`at ${fmtAtClock()}`;
 
     renderCapacity(_capData);
   }catch(e){
@@ -911,13 +951,7 @@ function renderCapacity(data){
   const periodH=parseInt(document.getElementById('cHours').value,10)||24;
   const labelTimepoint=(tp)=>{
     const dt=new Date(tp);
-    if(periodH<=24){
-      return dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    }
-    return dt.toLocaleString('en-GB',{
-      day:'2-digit',month:'short',year:'numeric',
-      hour:'2-digit',minute:'2-digit',hour12:false
-    });
+    return fmtChartAxis(dt, periodH>24);
   };
 
   // Subsample for chart performance (max 500 points)
@@ -976,48 +1010,6 @@ function renderCapacity(data){
   document.getElementById('ck2').textContent=avg(intBill)+'%';
   document.getElementById('ck3').textContent=avg(bgBill)+'%';
   document.getElementById('ck4').textContent=Math.max(...totalAll).toFixed(1)+'%';
-
-  // Table
-  renderCapTable(data);
-}
-
-function renderCapTable(data){
-  const sorted=[...data].sort((a,b)=>{
-    let va=a[_capSortCol],vb=b[_capSortCol];
-    if(va<vb) return _capSortAsc?-1:1;
-    if(va>vb) return _capSortAsc?1:-1;
-    return 0;
-  });
-  const sa=col=>col===_capSortCol?(_capSortAsc?' ↑':' ↓'):'';
-
-  function pct(v){
-    const p=(v*100).toFixed(2);
-    const color=v>0.8?'var(--danger)':v>0.5?'var(--warn)':'var(--success)';
-    return `<span style="color:${color}">${p}%</span>`;
-  }
-
-  document.getElementById('capTbl').innerHTML=`<table>
-    <thead><tr>
-      <th onclick="capSortBy('timepoint')">Timepoint${sa('timepoint')}</th>
-      <th onclick="capSortBy('interactive')">Interactive %${sa('interactive')}</th>
-      <th onclick="capSortBy('background')">Background %${sa('background')}</th>
-      <th onclick="capSortBy('sku_cu')">SKU CU %${sa('sku_cu')}</th>
-    </tr></thead>
-    <tbody>${sorted.slice(0,500).map(d=>`<tr>
-      <td style="font-size:10px">${new Date(d.timepoint).toLocaleString('en-GB')}</td>
-      <td>${pct(d.interactive)}</td>
-      <td>${pct(d.background)}</td>
-      <td>${pct(d.interactive_nb)}</td>
-      <td>${pct(d.background_nb)}</td>
-      <td>${pct(d.sku_cu)}</td>
-    </tr>`).join('')}</tbody>
-  </table>
-  ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 500 of ${sorted.length} timepoints</div>`:''}`;
-}
-
-function capSortBy(col){
-  if(_capSortCol===col) _capSortAsc=!_capSortAsc; else{_capSortCol=col;_capSortAsc=false;}
-  renderCapTable(_capData);
 }
 
 // ── ACTIVITY ──────────────────────────────────────────────────────────
@@ -1043,12 +1035,15 @@ async function doRefresh(){
     _rawActivityEvents=events;
     _activityFilterOptions=data.filterOptions||null;
     _activitySummary=data.summaryTotals||null;
+    _activityChartAggregates=data.chartAggregates??null;
+    _activityChartAggregatesUnfiltered=data.chartAggregates??null;
     _activityIsTruncated=Boolean(data.truncated);
     populateFilters();
+    _activityAggregatesFilterKey=JSON.stringify(getActivityFilters());
     document.getElementById('dataInfo').style.display='flex';
     const totalCount = data.originalCount != null ? data.originalCount : _allEvents.length;
     document.getElementById('dataCount').textContent=totalCount.toLocaleString();
-    document.getElementById('dataTime').textContent=`at ${now.toLocaleTimeString('en-GB')}`;
+    document.getElementById('dataTime').textContent=`at ${fmtAtClock()}`;
     applyFilters();
   }catch(e){
     console.error(e);
@@ -1189,16 +1184,28 @@ function filterItems(id,q){
   });
 }
 
+function activityItemLabel(e){
+  return e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||'';
+}
+
 function getActivityFilters(){
   const type=[...(_msState['fType']||new Set())];
   const ws=[...(_msState['fWs']||new Set())];
+  const item=[...(_msState['fItem']||new Set())];
   const user=[...(_msState['fUser']||new Set())];
   const status=document.getElementById('fStatus').value;
-  return {type,ws,user,status};
+  return {type,ws,item,user,status};
 }
 
 function hasActiveActivityFilters(filters){
-  return filters.type.length||filters.ws.length||filters.user.length||filters.status;
+  return filters.type.length||filters.ws.length||filters.item.length||filters.user.length||filters.status;
+}
+
+function shouldUseServerChartAggregates(){
+  return Boolean(
+    _activityChartAggregates
+    && JSON.stringify(getActivityFilters())===_activityAggregatesFilterKey
+  );
 }
 
 async function fetchActivityFilteredEvents(filters){
@@ -1212,8 +1219,10 @@ async function fetchActivityFilteredEvents(filters){
     _allEvents=events;
     _activityFilterOptions=data.filterOptions||_activityFilterOptions;
     _activitySummary=data.summaryTotals||_activitySummary;
+    _activityChartAggregates=data.chartAggregates??null;
     _activityIsTruncated=Boolean(data.truncated);
     _activityFilterKey=JSON.stringify(filters);
+    _activityAggregatesFilterKey=JSON.stringify(filters);
     if(data.warning){
       warningEl.textContent=data.warning;
       warningEl.style.display='block';
@@ -1259,9 +1268,11 @@ document.addEventListener('click',()=>{
 function populateFilters(){
   const ops = _activityFilterOptions?.type || [...new Set(_allEvents.map(e=>e.Activity||e.OperationName||'').filter(Boolean))].sort();
   const wss = _activityFilterOptions?.ws || [...new Set(_allEvents.map(e=>e.WorkSpaceName||e.WorkspaceName||'').filter(Boolean))].sort();
+  const items = _activityFilterOptions?.item || [...new Set(_allEvents.map(activityItemLabel).filter(Boolean))].sort();
   const users = _activityFilterOptions?.user || [...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
   buildMultiSelect('ms-fType',ops);
   buildMultiSelect('ms-fWs',wss);
+  buildMultiSelect('ms-fItem',items);
   buildMultiSelect('ms-fUser',users);
 }
 
@@ -1279,18 +1290,25 @@ function applyFilters(){
     if(_rawActivityEvents.length){
       _allEvents=_rawActivityEvents;
     }
+    if(_activityChartAggregatesUnfiltered){
+      _activityChartAggregates=_activityChartAggregatesUnfiltered;
+    }
+    _activityAggregatesFilterKey=JSON.stringify(getActivityFilters());
   }
   const selType=new Set(filters.type);
   const selWs=new Set(filters.ws);
+  const selItem=new Set(filters.item);
   const selUser=new Set(filters.user);
   const fStatus=filters.status;
   const filtered=_allEvents.filter(e=>{
     const op  =e.Activity||e.OperationName||'';
     const ws  =e.WorkSpaceName||e.WorkspaceName||'';
+    const it  =activityItemLabel(e);
     const user=e.UserId||e.UserName||'';
     const ok  =e.IsSuccess!==false;
     if(selType.size>0&&!selType.has(op))  return false;
     if(selWs.size>0  &&!selWs.has(ws))   return false;
+    if(selItem.size>0&&!selItem.has(it)) return false;
     if(selUser.size>0&&!selUser.has(user))return false;
     if(fStatus==='ok'  &&!ok) return false;
     if(fStatus==='fail'&& ok) return false;
@@ -1302,7 +1320,7 @@ function applyFilters(){
 }
 
 function clearFilters(){
-  ['fType','fWs','fUser'].forEach(id=>clearMs(id));
+  ['fType','fWs','fItem','fUser'].forEach(id=>clearMs(id));
   document.getElementById('fStatus').value='';
   applyFilters();
 }
@@ -1330,6 +1348,18 @@ function renderKPIs(ev){
 
 function renderTimeChart(ev){
   if(!timeChart) return;
+  const tl=shouldUseServerChartAggregates()&&_activityChartAggregates?.timeline;
+  if(tl&&tl.bucketStarts&&tl.bucketStarts.length){
+    const starts=tl.bucketStarts;
+    const span=starts.length>1?starts[starts.length-1]-starts[0]:0;
+    timeChart.data.labels=starts.map(ms=>fmtChartAxis(new Date(ms),span>86400000));
+    timeChart.data.datasets[0].data=tl.viewReport||[];
+    timeChart.data.datasets[1].data=tl.refresh||[];
+    timeChart.data.datasets[2].data=tl.external||[];
+    timeChart.data.datasets[3].data=tl.other||[];
+    timeChart.update();
+    return;
+  }
   if(!ev.length){
     timeChart.data.labels=[];
     timeChart.data.datasets.forEach(d=>d.data=[]);
@@ -1338,16 +1368,27 @@ function renderTimeChart(ev){
   }
   const times=ev.map(e=>new Date(e.CreationTime||0).getTime()).filter(t=>t>0);
   const minT=Math.min(...times),maxT=Math.max(...times);
-  const slots=Math.min(Math.ceil((maxT-minT)/3600000)+1,48);
+  const rangeMs=Math.max(maxT-minT,1);
+  const slots=Math.min(48,Math.max(1,Math.ceil(rangeMs/3600000)));
   const labels=[],d0=[],d1=[],d2=[],d3=[];
   for(let i=0;i<slots;i++){
-    const s=new Date(minT+i*3600000),e2=new Date(s.getTime()+3600000);
-    labels.push(s.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
-    const sl=ev.filter(e=>{const t=new Date(e.CreationTime||0);return t>=s&&t<e2;});
-    d0.push(sl.filter(e=>e.Activity==='ViewReport').length);
-    d1.push(sl.filter(e=>e.Activity==='RefreshDataset').length);
-    d2.push(sl.filter(e=>e.Activity==='ConnectFromExternalApplication').length);
-    d3.push(sl.filter(e=>e.Activity!=='ViewReport'&&e.Activity!=='RefreshDataset'&&e.Activity!=='ConnectFromExternalApplication').length);
+    const slotStart=minT+(rangeMs*i)/slots;
+    const slotEnd=minT+(rangeMs*(i+1))/slots;
+    const d=new Date(slotStart);
+    labels.push(fmtChartAxis(d,rangeMs>86400000));
+    const last=i===slots-1;
+    const sl=ev.filter(e=>{
+      const t=new Date(e.CreationTime||0).getTime();
+      return t>=slotStart&&(last?t<=slotEnd:t<slotEnd);
+    });
+    const op=e=>e.Activity||e.OperationName||'';
+    d0.push(sl.filter(e=>op(e)==='ViewReport').length);
+    d1.push(sl.filter(e=>op(e)==='RefreshDataset').length);
+    d2.push(sl.filter(e=>op(e)==='ConnectFromExternalApplication').length);
+    d3.push(sl.filter(e=>{
+      const o=op(e);
+      return o!=='ViewReport'&&o!=='RefreshDataset'&&o!=='ConnectFromExternalApplication';
+    }).length);
   }
   timeChart.data.labels=labels;
   [d0,d1,d2,d3].forEach((d,i)=>timeChart.data.datasets[i].data=d);
@@ -1356,14 +1397,26 @@ function renderTimeChart(ev){
 
 function renderHourChart(ev){
   if(!hourChart) return;
+  if(shouldUseServerChartAggregates()&&_activityChartAggregates?.hourOfDay?.length===24){
+    hourChart.data.datasets[0].data=[..._activityChartAggregates.hourOfDay];
+    hourChart.update();
+    return;
+  }
   const hours=Array(24).fill(0);
-  ev.forEach(e=>{const h=new Date(e.CreationTime||0).getHours();if(h>=0&&h<24)hours[h]++;});
+  ev.forEach(e=>{const h=fmHourOfDay(e.CreationTime||0);if(h>=0&&h<24)hours[h]++;});
   hourChart.data.datasets[0].data=hours;
   hourChart.update();
 }
 
 function renderMethodChart(ev){
   if(!methodChart) return;
+  if(shouldUseServerChartAggregates()&&_activityChartAggregates?.method?.labels){
+    const m=_activityChartAggregates.method;
+    methodChart.data.labels=m.labels;
+    methodChart.data.datasets[0].data=m.values;
+    methodChart.update();
+    return;
+  }
   const counts={};
   ev.forEach(e=>{
     let m=e.ConsumptionMethod||'';
@@ -1384,6 +1437,13 @@ function renderMethodChart(ev){
 
 function renderArtifactChart(ev){
   if(!artifactChart) return;
+  if(shouldUseServerChartAggregates()&&_activityChartAggregates?.artifact?.labels){
+    const a=_activityChartAggregates.artifact;
+    artifactChart.data.labels=a.labels;
+    artifactChart.data.datasets[0].data=a.values;
+    artifactChart.update();
+    return;
+  }
   const counts={};
   ev.forEach(e=>{const k=e.ArtifactKind||e.ObjectType||'Other';counts[k]=(counts[k]||0)+1;});
   const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
@@ -1394,6 +1454,13 @@ function renderArtifactChart(ev){
 
 function renderOperationChart(ev){
   if(!operationChart) return;
+  if(shouldUseServerChartAggregates()&&_activityChartAggregates?.operation?.labels){
+    const o=_activityChartAggregates.operation;
+    operationChart.data.labels=o.labels;
+    operationChart.data.datasets[0].data=o.values;
+    operationChart.update();
+    return;
+  }
   const counts={};
   ev.forEach(e=>{
     const op=e.Activity||e.OperationName||'Other';
@@ -1425,12 +1492,22 @@ function renderRankList(id,entries,color){
 }
 
 function renderRankings(ev){
+  if(shouldUseServerChartAggregates()&&_activityChartAggregates?.rankings){
+    const r=_activityChartAggregates.rankings;
+    renderRankList('rankReports', r.reports||[],'#00d4ff');
+    renderRankList('rankDatasets',r.datasets||[],'#ff6b35');
+    renderRankList('rankUsers',   r.users||[],'#00ff9f');
+    renderRankList('rankWs',      r.workspaces||[],'#a855f7');
+    renderRankList('rankFails',   r.fails||[],'#ef4444');
+    renderRankList('rankExternal',r.external||[],'#00ff9f');
+    return;
+  }
   renderRankList('rankReports', topN(ev,e=>e.ReportName||e.ArtifactName||''),'#00d4ff');
   renderRankList('rankDatasets',topN(ev,e=>e.DatasetName||''),'#ff6b35');
   renderRankList('rankUsers',   topN(ev,e=>e.UserId||e.UserName||''),'#00ff9f');
   renderRankList('rankWs',      topN(ev,e=>e.WorkSpaceName||e.WorkspaceName||''),'#a855f7');
-  renderRankList('rankFails',   topN(ev.filter(e=>e.IsSuccess===false),e=>e.Activity||'',10),'#ef4444');
-  renderRankList('rankExternal',topN(ev.filter(e=>e.Activity==='ConnectFromExternalApplication'),e=>e.AppName||e.UserAgent||'Unknown app',10),'#00ff9f');
+  renderRankList('rankFails',   topN(ev.filter(e=>e.IsSuccess===false),e=>e.Activity||e.OperationName||'',10),'#ef4444');
+  renderRankList('rankExternal',topN(ev.filter(e=>(e.Activity||e.OperationName)==='ConnectFromExternalApplication'),e=>e.AppName||e.UserAgent||'Unknown app',10),'#00ff9f');
 }
 
 function opBadge(op){
@@ -1468,7 +1545,7 @@ function renderTable(ev){
       <th onclick="sortBy('IsSuccess')">Status${sa('IsSuccess')}</th>
     </tr></thead>
     <tbody>${sorted.slice(0,500).map(e=>{
-      const ts  =e.CreationTime?new Date(e.CreationTime).toLocaleString('en-GB'):'—';
+      const ts  =e.CreationTime?fmtDateTime(e.CreationTime):'—';
       const op  =e.Activity||e.OperationName||'—';
       const user=e.UserId||e.UserName||'—';
       const item=e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||'—';
@@ -1516,7 +1593,7 @@ function openDrill(tp) {
   _drillTp      = tp;
   _drillCache   = {};   // clear cache only when opening a NEW timepoint
   _drillFilters = {};
-  document.getElementById('drillTp').textContent = new Date(tp).toLocaleString('en-GB');
+  document.getElementById('drillTp').textContent = fmtDateTime(tp);
   document.getElementById('drillOverlay').classList.add('open');
   document.body.classList.add('drill-open');
   // Reset to interactive tab when opening new timepoint
@@ -1802,7 +1879,7 @@ async function loadRefreshes(){
     _refAll = data.datasets || [];
     document.getElementById('refInfo').style.display='flex';
     document.getElementById('refCount').textContent = _refAll.length.toLocaleString();
-    document.getElementById('refTime').textContent  = 'at '+new Date().toLocaleTimeString('en-GB');
+    document.getElementById('refTime').textContent  = 'at '+fmtAtClock();
     // Build filter dropdowns
     buildRefFilters();
     applyRefFilters();
@@ -1995,7 +2072,7 @@ function renderRefTable(data){
       <td style="font-size:10px;text-align:center">${r.refresh_count||0}</td>
       <td style="font-size:10px;text-align:center;${r.refresh_failures>0?'color:var(--danger)':''}">${r.refresh_failures||0}</td>
       <td>${statusBadge(r.last_status)}</td>
-      <td style="font-size:10px;color:var(--dim)">${r.last_end?new Date(r.last_end).toLocaleString('en-GB'):'—'}</td>
+      <td style="font-size:10px;color:var(--dim)">${r.last_end?fmtDateTime(r.last_end):'—'}</td>
     </tr>`).join('')}</tbody>
   </table>
   ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 500 of ${sorted.length} datasets</div>`:''}`;
@@ -2024,7 +2101,7 @@ async function loadInventory(){
       data.source==='fabric'?'Fabric API (all item types)'
       :data.source==='powerbi'?'Power BI (reports, datasets, dashboards, dataflows)'
       :'Mixed: Fabric where available, Power BI otherwise';
-    document.getElementById('invTime').textContent=new Date().toLocaleString('en-GB');
+    document.getElementById('invTime').textContent=fmtDateTime(new Date());
     if(data.warnings&&data.warnings.length){
       warnEl.style.display='flex';
       warnEl.innerHTML='<span>⚠ '+data.warnings.map(w=>`<span style="display:block;margin-top:4px">${invEscape(w)}</span>`).join('')+'</span>';
@@ -2162,7 +2239,7 @@ function exportRowsToExcel(filename, rows, cols){
 function exportCapacityToExcel(){
   if(!_capData.length){alert('No data to export.');return;}
   exportRowsToExcel('Fabric_Capacity_Details.xls', _capData, [
-    {label:'Timepoint', value:d=>new Date(d.timepoint).toLocaleString('en-GB')},
+    {label:'Timepoint', value:d=>fmtDateTime(d.timepoint)},
     {label:'Interactive %', value:d=>((d.interactive||0)*100).toFixed(2)+'%'},
     {label:'Background %', value:d=>((d.background||0)*100).toFixed(2)+'%'},
     {label:'SKU CU %', value:d=>((d.sku_cu||0)*100).toFixed(2)+'%'}
@@ -2172,7 +2249,7 @@ function exportCapacityToExcel(){
 function exportActivityToExcel(){
   if(!_currentActivityRows.length){alert('No data to export.');return;}
   exportRowsToExcel('Fabric_Activity_Details.xls', _currentActivityRows, [
-    {label:'Time', value:e=>e.CreationTime?new Date(e.CreationTime).toLocaleString('en-GB'):'',},
+    {label:'Time', value:e=>e.CreationTime?fmtDateTime(e.CreationTime):'',},
     {label:'Operation', value:e=>e.Activity||e.OperationName||''},
     {label:'User', value:e=>e.UserId||e.UserName||''},
     {label:'Item', value:e=>e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||''},
@@ -2198,7 +2275,7 @@ function exportRefreshesToExcel(){
     {label:'Total Refreshes', value:r=>r.refresh_count||0},
     {label:'Failures', value:r=>r.refresh_failures||0},
     {label:'Last Status', value:r=>r.last_status||''},
-    {label:'Last Refresh', value:r=>r.last_end?new Date(r.last_end).toLocaleString('en-GB'):''}
+    {label:'Last Refresh', value:r=>r.last_end?fmtDateTime(r.last_end):''}
   ]);
 }
 
