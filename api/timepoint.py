@@ -122,7 +122,10 @@ def handle_timepoint(payload):
         raise Exception("timepoint missing")
 
     try:
-        dt = datetime.fromisoformat(tp)
+        s = str(tp).strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        dt = datetime.fromisoformat(s)
     except ValueError:
         raise Exception(f"Invalid timepoint format: {tp}")
 

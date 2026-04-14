@@ -115,14 +115,24 @@ def main():
     print("  FABRIC ACTIVITY MONITOR")
     print("═" * 60)
     print(f"\n  Tenant: {TENANT_ID}")
-    import socket
-    local_ip = socket.gethostbyname(socket.gethostname())
-    print(f"\n  ✓ Proxy active")
-    print(f"    Local:  http://localhost:{PORT}")
-    print(f"    Network: http://{local_ip}:{PORT}\n")
-    print("  Authenticating in background...\n")
+    print("\n  Sign in first (device code appears below if required).\n")
 
-    _ensure_auth_thread()
+    try:
+        get_token()
+    except Exception as e:
+        print(f"\n  ERROR: Sign-in failed: {e}")
+        print("  Fix the issue and restart.\n")
+        return
+
+    import socket
+    try:
+        local_ip = socket.gethostbyname(socket.gethostname())
+    except OSError:
+        local_ip = "127.0.0.1"
+
+    print(f"  ✓ Proxy ready — open the report in your browser:")
+    print(f"    Local:   http://localhost:{PORT}")
+    print(f"    Network: http://{local_ip}:{PORT}\n")
 
     server = HTTPServer(("0.0.0.0", PORT), Handler)
     try:

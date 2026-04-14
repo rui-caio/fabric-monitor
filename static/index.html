@@ -611,6 +611,7 @@
       <div>
         <div class="drill-title" id="drillTitle">Timepoint Detail</div>
         <div class="drill-tp" id="drillTp"></div>
+        <div class="drill-ref" id="drillChartRef" style="display:none;font-size:10px;color:var(--dim);margin-top:4px;line-height:1.35"></div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <button class="btn btn-s" onclick="closeDrillPanel()">← Back to chart</button>
@@ -700,7 +701,7 @@ function fmtAtClock(){
 const P = window.location.origin;
 let timeChart,methodChart,artifactChart,operationChart,hourChart;
 let cuChart,skuChart,breakdownChart,invTypeChart;
-let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySummary=null,_activityChartAggregates=null,_activityChartAggregatesUnfiltered=null,_activityAggregatesFilterKey='',_capData=[];
+let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySummary=null,_activityChartAggregates=null,_activityChartAggregatesUnfiltered=null,_activityAggregatesFilterKey='',_capData=[],_capChartStep=1;
 let _currentActivityRows=[];
 let _currentRefRows=[];
 let _invAll=[],_currentInvRows=[],_invSortCol='workspaceName',_invSortAsc=true;
@@ -954,8 +955,9 @@ function renderCapacity(data){
     return fmtChartAxis(dt, periodH>24);
   };
 
-  // Subsample for chart performance (max 500 points)
+  // Subsample for chart performance (max 500 points) — must match onChartClick index mapping
   const step  = data.length > 500 ? Math.ceil(data.length/500) : 1;
+  _capChartStep = step;
   const sample= data.filter((_,i)=>i%step===0);
 
   const labels= sample.map(d=>labelTimepoint(d.timepoint));
@@ -1576,24 +1578,46 @@ function sortBy(col){
 
 // ── Drill-down ────────────────────────────────────────────────────────
 let _drillTp   = null;
+let _drillCapPoint = null;   // capacity row for clicked timepoint (chart numbers)
 let _drillMode = 'interactive';
 let _drillCache = {};        // keyed by "tp|mode" — persists across tab switches
 let _drillFilters = {};      // { field: Set of selected values }
 
-function onChartClick(idx) {
-  if (!_capData || !_capData[idx]) return;
-  const step  = _capData.length > 500 ? Math.ceil(_capData.length/500) : 1;
-  const actual = idx * step;
-  const point  = _capData[Math.min(actual, _capData.length-1)];
-  if (!point) return;
-  openDrill(point.timepoint);
+function _drillSkuTotalPct(p){
+  if(!p) return null;
+  return ((p.interactive||0)+(p.background||0)+(p.interactive_nb||0)+(p.background_nb||0))*100;
 }
 
-function openDrill(tp) {
+function onChartClick(dataIndex) {
+  if (!_capData || !_capData.length) return;
+  const step = _capChartStep > 0 ? _capChartStep : 1;
+  const actual = dataIndex * step;
+  if (actual < 0 || actual >= _capData.length) return;
+  const point = _capData[actual];
+  if (!point || point.timepoint == null) return;
+  openDrill(point);
+}
+
+function openDrill(point) {
+  if (!point || point.timepoint == null) return;
+  const tp = point.timepoint;
   _drillTp      = tp;
+  _drillCapPoint = point;
   _drillCache   = {};   // clear cache only when opening a NEW timepoint
   _drillFilters = {};
   document.getElementById('drillTp').textContent = fmtDateTime(tp);
+  const refEl = document.getElementById('drillChartRef');
+  if (refEl) {
+    const intr = (point.interactive || 0) * 100;
+    const bg = (point.background || 0) * 100;
+    const skuT = _drillSkuTotalPct(point);
+    refEl.innerHTML =
+      '<strong>Same timepoint as main chart</strong> — Billable CU % vs SKU: Interactive ' + intr.toFixed(2) +
+      '%, Background ' + bg.toFixed(2) +
+      '% (stacked area). <strong>Total SKU load</strong> (billable+non-billable): ' + (skuT != null ? skuT.toFixed(2) : '—') + '% — matches the <em>SKU CU %</em> line.' +
+      '<br><span style="opacity:.9">Each row’s “% Capacity” is a <em>per-operation</em> share of base capacity (many ops run in parallel). <strong>Adding row % values (e.g. two lines → ~30%) is not meant to equal the 128% SKU snapshot</strong> — that snapshot is one aggregate measure, not the sum of those cells.</span>';
+    refEl.style.display = 'block';
+  }
   document.getElementById('drillOverlay').classList.add('open');
   document.body.classList.add('drill-open');
   // Reset to interactive tab when opening new timepoint
@@ -1786,7 +1810,8 @@ function renderDrillTable(rows, mode) {
   const totCu  = grouped.reduce((s,r)=>s+r.total_cu,0);
   const totTp  = grouped.reduce((s,r)=>s+r.timepoint_cu,0);
   const totDur = grouped.reduce((s,r)=>s+r.duration,0);
-  const totPct = grouped.reduce((s,r)=>s+r.pct_capacity,0)*100;
+  const sumOpPct = grouped.reduce((s,r)=>s+r.pct_capacity,0)*100;
+  const chartSku = _drillSkuTotalPct(_drillCapPoint);
   const metricCards = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:14px">
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid ${color}">
       <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Total CU (s)</div>
@@ -1804,9 +1829,10 @@ function renderDrillTable(rows, mode) {
       <div style="font-size:9px;color:var(--dim);margin-top:2px">total</div>
     </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--warn)">
-      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">% Capacity</div>
-      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--warn)">${totPct.toFixed(2)}%</div>
-      <div style="font-size:9px;color:var(--dim);margin-top:2px">sum</div>
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">% SKU (chart timepoint)</div>
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--warn)">${chartSku != null ? chartSku.toFixed(2) : '—'}%</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.35">Same as main <em>SKU CU %</em> line (all billable+non-billable).</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:8px;padding-top:6px;border-top:1px solid var(--border);opacity:.95;line-height:1.4">Sum of “% Capacity” in the table (${sumOpPct.toFixed(2)}% over ${grouped.length} row${grouped.length===1?'':'s'}): <strong>illustrative only</strong> — row % are operation-level; they do <strong>not</strong> add up to this SKU total.</div>
     </div>
   </div>`;
 
@@ -1815,6 +1841,9 @@ function renderDrillTable(rows, mode) {
       💡 ${rows.length} operations → ${grouped.length} groups by: <strong style="color:var(--cu)">${dims.map(d=>DIM_LABELS[d]).join(' + ')}</strong>
     </div>
     ${metricCards}
+    <div style="font-size:10px;color:var(--dim);line-height:1.45;margin-bottom:10px;padding:8px 10px;background:var(--surface2);border-radius:6px;border:1px solid var(--border)">
+      <strong style="color:var(--cu)">Why row % don’t sum to the SKU % card:</strong> the card is one <em>timepoint</em> aggregate from the model. Each “% Capacity” cell is a <em>per-operation</em> measure; with few grouped rows, their sum stays far below the SKU total — that is expected.
+    </div>
     <div style="overflow-x:auto">
     <table class="drill-table">
       <thead><tr>
@@ -1822,7 +1851,7 @@ function renderDrillTable(rows, mode) {
         <th>Total CU (s)</th>
         <th>TP CU (s)</th>
         <th>Duration (s)</th>
-        <th>% Capacity</th>
+        <th title="Per-operation % of base capacity — do not sum to match SKU %">% Capacity <span style="font-weight:400;opacity:.75">(per op.)</span></th>
       </tr></thead>
       <tbody>
         ${grouped.map(r => `<tr>

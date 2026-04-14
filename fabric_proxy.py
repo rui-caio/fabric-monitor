@@ -2,7 +2,7 @@
 Fabric Monitor — Activity Log
 Dependency: pip install msal
 Run: python fabric_proxy.py
-Open browser at: http://localhost:8765
+(Device sign-in runs first; the local report URL is printed after authentication.)
 """
 from server import main
 
