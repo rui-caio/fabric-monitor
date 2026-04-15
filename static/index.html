@@ -294,20 +294,6 @@
       <div class="cw xlarge"><canvas id="cuChart"></canvas></div>
     </div>
 
-    <!-- SKU % + Breakdown -->
-    <div class="grid-wide">
-      <div class="cc">
-        <div class="ct">SKU CU % — Utilisation vs limit</div>
-        <div class="cs">CU consumed as % of total SKU capacity</div>
-        <div class="cw tall"><canvas id="skuChart"></canvas></div>
-      </div>
-      <div class="cc">
-        <div class="ct">Breakdown — Interactive vs Background</div>
-        <div class="cs">Consumption breakdown by type</div>
-        <div class="cw tall"><canvas id="breakdownChart"></canvas></div>
-      </div>
-    </div>
-
   </div>
 
   <!-- ══════════════════════════════════════════════════════ -->
@@ -700,7 +686,7 @@ function fmtAtClock(){
 }
 const P = window.location.origin;
 let timeChart,methodChart,artifactChart,operationChart,hourChart;
-let cuChart,skuChart,breakdownChart,invTypeChart;
+let cuChart,invTypeChart;
 let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySummary=null,_activityChartAggregates=null,_activityChartAggregatesUnfiltered=null,_activityAggregatesFilterKey='',_capData=[],_capChartStep=1;
 let _currentActivityRows=[];
 let _currentRefRows=[];
@@ -749,32 +735,8 @@ function initCharts(){
         }
       },
       scales:{x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
-              y:{stacked:true,ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}},
+              y:{stacked:true,max:300,beginAtZero:true,ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc}}},
       onClick:(evt,items)=>{ if(items.length) onChartClick(items[0].index); }}
-  });
-
-  skuChart=new Chart(document.getElementById('skuChart').getContext('2d'),{
-    type:'line',
-    data:{labels:[],datasets:[
-      {label:'SKU CU %',data:[],borderColor:'#00d4ff',backgroundColor:'rgba(0,212,255,0.1)',fill:true,tension:0.3,pointRadius:0,borderWidth:2},
-      {label:'Limite (100%)',data:[],borderColor:'rgba(239,68,68,0.5)',borderDash:[5,5],fill:false,pointRadius:0,borderWidth:1},
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
-      scales:{x:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
-              y:{ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
-  });
-
-  breakdownChart=new Chart(document.getElementById('breakdownChart').getContext('2d'),{
-    type:'bar',
-    data:{labels:[],datasets:[
-      {label:'Interactive billable',data:[],backgroundColor:'rgba(0,255,159,0.7)',borderColor:'#00ff9f',borderWidth:1,borderRadius:2},
-      {label:'Background billable', data:[],backgroundColor:'rgba(255,107,53,0.7)',borderColor:'#ff6b35',borderWidth:1,borderRadius:2},
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{labels:{color:'#64748b',font:{family:'JetBrains Mono',size:9},boxWidth:8}}},
-      scales:{x:{stacked:true,ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},maxTicksLimit:12},grid:{color:gc}},
-              y:{stacked:true,ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:9},callback:v=>v.toFixed(0)+'%'},grid:{color:gc},beginAtZero:true}}}
   });
 
   // Activity charts
@@ -966,40 +928,15 @@ function renderCapacity(data){
   const intPct= sample.map(d=>+((d.interactive||0)*100).toFixed(2));
   const bgPct = sample.map(d=>+((d.background||0)*100).toFixed(2));
 
-  // SKU CU % — computed from component fields (billable + non-billable)
-  // sku_cu from Power BI can be unreliable in SUMMARIZECOLUMNS context
-  const skuPct= sample.map(d=>+(
-    ((d.interactive||0)+(d.background||0)+(d.interactive_nb||0)+(d.background_nb||0))*100
-  ).toFixed(2));
-
   // CU stacked area: [0]=Background (base), [1]=Interactive (on top), [2]=100% reference line
   const pct100=sample.map(()=>100);
   const xRot=periodH>24?45:0;
-  [cuChart,skuChart,breakdownChart].forEach(ch=>{
-    if(ch&&ch.options&&ch.options.scales&&ch.options.scales.x&&ch.options.scales.x.ticks){
-      ch.options.scales.x.ticks.maxRotation=xRot;
-    }
-  });
+  if(cuChart?.options?.scales?.x?.ticks) cuChart.options.scales.x.ticks.maxRotation=xRot;
   cuChart.data.labels=labels;
   cuChart.data.datasets[0].data=bgPct;
   cuChart.data.datasets[1].data=intPct;
   cuChart.data.datasets[2].data=pct100;
   cuChart.update();
-
-  // SKU chart — remove fixed 100 line, let axis auto-scale
-  skuChart.data.labels=labels;
-  skuChart.data.datasets[0].data=skuPct;
-  skuChart.data.datasets[1].data=sample.map(()=>100); // 100% limit line
-  skuChart.update();
-
-  // Breakdown bar chart (billable only)
-  const step2  = data.length > 100 ? Math.ceil(data.length/100) : 1;
-  const sample2= data.filter((_,i)=>i%step2===0);
-  const labels2= sample2.map(d=>labelTimepoint(d.timepoint));
-  breakdownChart.data.labels=labels2;
-  breakdownChart.data.datasets[0].data=sample2.map(d=>+((d.interactive||0)*100).toFixed(2));
-  breakdownChart.data.datasets[1].data=sample2.map(d=>+((d.background||0)*100).toFixed(2));
-  breakdownChart.update();
 
   // KPIs — use full data (not subsampled)
   const avg=arr=>arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1):0;
