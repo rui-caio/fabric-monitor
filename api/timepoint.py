@@ -20,45 +20,25 @@ _DAX_BACKGROUND = """DEFINE
 		'Dates'[Date] >= DATE(2026, 4, 1)), 'Dates'[Date] < DATE(TD_Y,TD_M,TD_D)))
 	VAR __DS0Core = SUMMARIZECOLUMNS(
 		ROLLUPADDISSUBTOTAL(ROLLUPGROUP(
-			'Timepoint Background Detail'[Operation start time],
-			'Timepoint Background Detail'[Operation end time],
-			'Timepoint Background Detail'[Status],
+			'Items'[Unique key],
+			'Items'[Workspace name],
 			'Timepoint Background Detail'[Operation],
 			'Timepoint Background Detail'[User],
-			'Items'[Workspace name],
-			'Items'[Item kind],
-			'Items'[Unique key],
-			'Timepoint Background Detail'[Billing type],
-			'Timepoint Background Detail'[Start],
-			'Timepoint Background Detail'[End],
 			'Items'[Item name]
 		), "IsGrandTotalRowTotal"),
 		__DS0FilterTable, __DS0FilterTable2, __DS0FilterTable3, __DS0FilterTable4,
-		"SumTotal_CU__s_",        CALCULATE(SUM('Timepoint Background Detail'[Total CU (s)])),
-		"SumDuration__s_",        CALCULATE(SUM('Timepoint Background Detail'[Duration (s)])),
-		"SumTimepoint_CU__s_",    CALCULATE(SUM('Timepoint Background Detail'[Timepoint CU (s)])),
-		"SumThrottling__s_",      CALCULATE(SUM('Timepoint Background Detail'[Throttling (s)])),
-		"Sumv__of_base_capacity", CALCULATE(SUM('Timepoint Background Detail'[% of base capacity]))
+		"Sumv__of_base_capacity", CALCULATE(SUM('Timepoint Background Detail'[% of base capacity])),
+		"SumDuration__s_", CALCULATE(SUM('Timepoint Background Detail'[Duration (s)])),
+		"SumTotal_CU__s_", CALCULATE(SUM('Timepoint Background Detail'[Total CU (s)])),
+		"SumTimepoint_CU__s_", CALCULATE(SUM('Timepoint Background Detail'[Timepoint CU (s)])),
+		"SumThrottling__s_", CALCULATE(SUM('Timepoint Background Detail'[Throttling (s)]))
 	)
-	VAR __DS0PrimaryWindowed = TOPN(502, __DS0Core, [IsGrandTotalRowTotal], 0, [SumTotal_CU__s_], 0,
-		'Timepoint Background Detail'[Operation start time], 1,
-		'Timepoint Background Detail'[Operation end time], 1,
-		'Timepoint Background Detail'[Status], 1,
-		'Timepoint Background Detail'[Operation], 1,
-		'Timepoint Background Detail'[User], 1,
-		'Items'[Workspace name], 1,
-		'Items'[Item kind], 1,
-		'Items'[Item name], 1,
-		'Items'[Unique key], 1,
-		'Timepoint Background Detail'[Billing type], 1,
-		'Timepoint Background Detail'[Start], 1,
-		'Timepoint Background Detail'[End], 1
+	VAR __DS0PrimaryWindowed = TOPN(502, __DS0Core, [IsGrandTotalRowTotal], 0, [Sumv__of_base_capacity], 0,
+		'Items'[Item name], 1, 'Items'[Unique key], 1, 'Items'[Workspace name], 1, 'Timepoint Background Detail'[Operation], 1, 'Timepoint Background Detail'[User], 1
 	)
 EVALUATE __DS0PrimaryWindowed
-ORDER BY [IsGrandTotalRowTotal] DESC, [SumTotal_CU__s_] DESC,
-	'Timepoint Background Detail'[Operation start time],
-	'Timepoint Background Detail'[Operation], 'Timepoint Background Detail'[User],
-	'Items'[Workspace name], 'Items'[Item name]"""
+ORDER BY [IsGrandTotalRowTotal] DESC, [Sumv__of_base_capacity] DESC,
+	'Items'[Item name], 'Items'[Unique key], 'Items'[Workspace name], 'Timepoint Background Detail'[Operation], 'Timepoint Background Detail'[User]"""
 
 _DAX_INTERACTIVE = """DEFINE
 	MPARAMETER 'TimePoint' = (DATE(TP_Y, TP_MO, TP_D) + TIME(TP_H, TP_MI, TP_S))
@@ -74,42 +54,24 @@ _DAX_INTERACTIVE = """DEFINE
 		'Dates'[Date] >= DATE(2026, 4, 1)), 'Dates'[Date] < DATE(TD_Y,TD_M,TD_D)))
 	VAR __DS0Core = SUMMARIZECOLUMNS(
 		ROLLUPADDISSUBTOTAL(ROLLUPGROUP(
-			'Timepoint Interactive Detail'[Operation start time],
-			'Timepoint Interactive Detail'[Operation end time],
-			'Timepoint Interactive Detail'[Status],
+			'Items'[Workspace name],
+			'Items'[Unique key],
 			'Timepoint Interactive Detail'[Operation],
 			'Timepoint Interactive Detail'[User],
-			'Items'[Workspace name],
-			'Items'[Item kind],
-			'Items'[Unique key],
-			'Timepoint Interactive Detail'[Billing type],
 			'Items'[Item name]
 		), "IsGrandTotalRowTotal"),
 		__DS0FilterTable, __DS0FilterTable2, __DS0FilterTable3, __DS0FilterTable4,
-		"Sumv__of_base_capacity", CALCULATE(SUM('Timepoint Interactive Detail'[% of base capacity])),
-		"SumThrottling__s_",      CALCULATE(SUM('Timepoint Interactive Detail'[Throttling (s)])),
-		"SumDuration__s_",        CALCULATE(SUM('Timepoint Interactive Detail'[Duration (s)])),
 		"SumTimepoint_CU__s_",    CALCULATE(SUM('Timepoint Interactive Detail'[Timepoint CU (s)])),
-		"SumTotal_CU__s_",        CALCULATE(SUM('Timepoint Interactive Detail'[Total CU (s)]))
+		"SumDuration__s_",        CALCULATE(SUM('Timepoint Interactive Detail'[Duration (s)])),
+		"SumTotal_CU__s_",        CALCULATE(SUM('Timepoint Interactive Detail'[Total CU (s)])),
+		"Sumv__of_base_capacity", CALCULATE(SUM('Timepoint Interactive Detail'[% of base capacity]))
 	)
-	VAR __DS0PrimaryWindowed = TOPN(502, __DS0Core, [IsGrandTotalRowTotal], 0, [Sumv__of_base_capacity], 0,
-		'Timepoint Interactive Detail'[Billing type], 1,
-		'Timepoint Interactive Detail'[Operation start time], 1,
-		'Timepoint Interactive Detail'[Operation end time], 1,
-		'Timepoint Interactive Detail'[Status], 1,
-		'Timepoint Interactive Detail'[Operation], 1,
-		'Timepoint Interactive Detail'[User], 1,
-		'Items'[Workspace name], 1,
-		'Items'[Item kind], 1,
-		'Items'[Item name], 1,
-		'Items'[Unique key], 1
+	VAR __DS0PrimaryWindowed = TOPN(502, __DS0Core, [IsGrandTotalRowTotal], 0, [SumTimepoint_CU__s_], 0,
+		'Items'[Workspace name], 1, 'Items'[Item name], 1, 'Items'[Unique key], 1, 'Timepoint Interactive Detail'[Operation], 1, 'Timepoint Interactive Detail'[User], 1
 	)
 EVALUATE __DS0PrimaryWindowed
-ORDER BY [IsGrandTotalRowTotal] DESC, [Sumv__of_base_capacity] DESC,
-	'Timepoint Interactive Detail'[Billing type],
-	'Timepoint Interactive Detail'[Operation start time],
-	'Timepoint Interactive Detail'[Operation], 'Timepoint Interactive Detail'[User],
-	'Items'[Workspace name], 'Items'[Item name]"""
+ORDER BY [IsGrandTotalRowTotal] DESC, [SumTimepoint_CU__s_] DESC,
+	'Items'[Workspace name], 'Items'[Item name], 'Items'[Unique key], 'Timepoint Interactive Detail'[Operation], 'Timepoint Interactive Detail'[User]"""
 
 
 def handle_timepoint(payload):
@@ -172,11 +134,7 @@ def handle_timepoint(payload):
                     "user":         row.get("Timepoint Background Detail[User]", ""),
                     "workspace":    row.get("Items[Workspace name]", ""),
                     "item":         row.get("Items[Item name]", ""),
-                    "item_kind":    row.get("Items[Item kind]", ""),
-                    "status":       row.get("Timepoint Background Detail[Status]", ""),
-                    "billing_type": row.get("Timepoint Background Detail[Billing type]", ""),
-                    "start":        row.get("Timepoint Background Detail[Operation start time]", ""),
-                    "end":          row.get("Timepoint Background Detail[Operation end time]", ""),
+                    "unique_key":   row.get("Items[Unique key]", ""),
                     "total_cu":     row.get("[SumTotal_CU__s_]", 0) or 0,
                     "timepoint_cu": row.get("[SumTimepoint_CU__s_]", 0) or 0,
                     "duration":     row.get("[SumDuration__s_]", 0) or 0,
@@ -189,15 +147,10 @@ def handle_timepoint(payload):
                     "user":         row.get("Timepoint Interactive Detail[User]", ""),
                     "workspace":    row.get("Items[Workspace name]", ""),
                     "item":         row.get("Items[Item name]", ""),
-                    "item_kind":    row.get("Items[Item kind]", ""),
-                    "status":       row.get("Timepoint Interactive Detail[Status]", ""),
-                    "billing_type": row.get("Timepoint Interactive Detail[Billing type]", ""),
-                    "start":        row.get("Timepoint Interactive Detail[Operation start time]", ""),
-                    "end":          row.get("Timepoint Interactive Detail[Operation end time]", ""),
+                    "unique_key":   row.get("Items[Unique key]", ""),
                     "total_cu":     row.get("[SumTotal_CU__s_]", 0) or 0,
                     "timepoint_cu": row.get("[SumTimepoint_CU__s_]", 0) or 0,
                     "duration":     row.get("[SumDuration__s_]", 0) or 0,
-                    "throttling":   row.get("[SumThrottling__s_]", 0) or 0,
                     "pct_capacity": row.get("[Sumv__of_base_capacity]", 0) or 0,
                 })
     except (KeyError, IndexError) as ex:
