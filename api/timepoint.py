@@ -41,6 +41,7 @@ _DAX_BACKGROUND = """DEFINE
 		SUMMARIZECOLUMNS(
 			ROLLUPADDISSUBTOTAL(
 				ROLLUPGROUP(
+					'Items'[Workspace Id],
 					'Items'[Workspace name],
 					'Items'[Item kind],
 					'Items'[Unique key],
@@ -70,6 +71,8 @@ _DAX_BACKGROUND = """DEFINE
 			0,
 			[Sumv__of_base_capacity],
 			0,
+			'Items'[Workspace Id],
+			1,
 			'Items'[Workspace name],
 			1,
 			'Items'[Item kind],
@@ -92,6 +95,7 @@ EVALUATE
 ORDER BY
 	[IsGrandTotalRowTotal] DESC,
 	[Sumv__of_base_capacity] DESC,
+	'Items'[Workspace Id],
 	'Items'[Workspace name],
 	'Items'[Item kind],
 	'Items'[Item name],
@@ -132,6 +136,7 @@ _DAX_INTERACTIVE = """DEFINE
 		SUMMARIZECOLUMNS(
 			ROLLUPADDISSUBTOTAL(
 				ROLLUPGROUP(
+					'Items'[Workspace Id],
 					'Items'[Workspace name],
 					'Items'[Item kind],
 					'Items'[Unique key],
@@ -160,6 +165,8 @@ _DAX_INTERACTIVE = """DEFINE
 			0,
 			[Sumv__of_base_capacity],
 			0,
+			'Items'[Workspace Id],
+			1,
 			'Items'[Workspace name],
 			1,
 			'Items'[Item kind],
@@ -182,6 +189,7 @@ EVALUATE
 ORDER BY
 	[IsGrandTotalRowTotal] DESC,
 	[Sumv__of_base_capacity] DESC,
+	'Items'[Workspace Id],
 	'Items'[Workspace name],
 	'Items'[Item kind],
 	'Items'[Item name],
@@ -248,11 +256,15 @@ def handle_timepoint(payload):
             if row.get("[IsGrandTotalRowTotal]", False):
                 continue
             if mode == "background":
+                ws_id = row.get("Items[Workspace Id]", "")
+                ws_name = row.get("Items[Workspace name]", "")
+                from api.domains import get_domain_for_workspace
                 rows.append({
                     "operation":    row.get("Timepoint Background Detail[Operation]", ""),
                     "status":       row.get("Timepoint Background Detail[Status]", ""),
                     "user":         row.get("Timepoint Background Detail[User]", ""),
-                    "workspace":    row.get("Items[Workspace name]", ""),
+                    "workspace":    ws_name,
+                    "domain":       get_domain_for_workspace(workspace_id=ws_id, workspace_name=ws_name),
                     "item":         row.get("Items[Item name]", ""),
                     "item_kind":    row.get("Items[Item kind]", ""),
                     "unique_key":   row.get("Items[Unique key]", ""),
@@ -262,12 +274,17 @@ def handle_timepoint(payload):
                     "throttling":   row.get("[SumThrottling__s_]", 0) or 0,
                     "pct_capacity": row.get("[Sumv__of_base_capacity]", 0) or 0,
                 })
+
             else:
+                ws_id = row.get("Items[Workspace Id]", "")
+                ws_name = row.get("Items[Workspace name]", "")
+                from api.domains import get_domain_for_workspace
                 rows.append({
                     "operation":    row.get("Timepoint Interactive Detail[Operation]", ""),
                     "status":       row.get("Timepoint Interactive Detail[Status]", ""),
                     "user":         row.get("Timepoint Interactive Detail[User]", ""),
-                    "workspace":    row.get("Items[Workspace name]", ""),
+                    "workspace":    ws_name,
+                    "domain":       get_domain_for_workspace(workspace_id=ws_id, workspace_name=ws_name),
                     "item":         row.get("Items[Item name]", ""),
                     "item_kind":    row.get("Items[Item kind]", ""),
                     "unique_key":   row.get("Items[Unique key]", ""),
@@ -277,6 +294,7 @@ def handle_timepoint(payload):
                     "throttling":   row.get("[SumThrottling__s_]", 0) or 0,
                     "pct_capacity": row.get("[Sumv__of_base_capacity]", 0) or 0,
                 })
+
 
     except (KeyError, IndexError) as ex:
         raise Exception(f"Error processing response: {ex}")

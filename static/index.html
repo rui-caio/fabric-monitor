@@ -341,6 +341,7 @@
         <button class="btn btn-p" id="btnR" onclick="doRefresh()">↻ Load Data</button>
       </div>
       <div class="fg"><label>Operation type</label><div class="ms-wrap" id="ms-fType"></div></div>
+      <div class="fg"><label>Domain</label><div class="ms-wrap" id="ms-fDomain"></div></div>
       <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-fWs"></div></div>
       <div class="fg"><label>Item</label><div class="ms-wrap" id="ms-fItem"></div></div>
       <div class="fg"><label>User</label><div class="ms-wrap" id="ms-fUser"></div></div>
@@ -462,6 +463,7 @@
       <label>&nbsp;</label>
       <button class="btn btn-p" id="btnRef" onclick="loadRefreshes()">↻ Load Refreshes</button>
     </div>
+    <div class="fg"><label>Domain</label><div class="ms-wrap" id="ms-rDom"></div></div>
     <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-rWs"></div></div>
     <div class="fg"><label>Dataset</label><div class="ms-wrap" id="ms-rDs"></div></div>
     <div class="fg"><label>Configured by</label><div class="ms-wrap" id="ms-rOwn"></div></div>
@@ -570,6 +572,7 @@
       <label>&nbsp;</label>
       <button class="btn btn-p" id="btnInv" onclick="loadInventory()">↻ Load Inventory</button>
     </div>
+    <div class="fg"><label>Domain</label><div class="ms-wrap" id="ms-iDom"></div></div>
     <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-iWs"></div></div>
     <div class="fg"><label>Type</label><div class="ms-wrap" id="ms-iType"></div></div>
     <div class="fg" style="min-width:180px">
@@ -596,6 +599,9 @@
       <div class="cw"><canvas id="invTypeChart"></canvas></div>
     </div>
   </div>
+
+  <div class="sec">Counts by Domain (Per Type)</div>
+  <div class="grid-mid" id="invDomainChartsGrid"></div>
 
   <div class="sec">Artifact list</div>
   <div class="tc">
@@ -633,7 +639,8 @@
     <div style="padding:0 20px 10px;border-bottom:1px solid var(--border);background:var(--surface)">
       <div class="dim-selector" id="dimSelector">
         <span class="dim-label">Group by:</span>
-        <label class="dim-pill active" onclick="toggleDim('workspace')"><span>Workspace</span></label>
+        <label class="dim-pill active" onclick="toggleDim('domain')"><span>Domain</span></label>
+        <label class="dim-pill" onclick="toggleDim('workspace')"><span>Workspace</span></label>
         <label class="dim-pill" onclick="toggleDim('item')"><span>Item</span></label>
         <label class="dim-pill" onclick="toggleDim('item_kind')"><span>Item Kind</span></label>
         <label class="dim-pill" onclick="toggleDim('operation')"><span>Operation</span></label>
@@ -1012,11 +1019,11 @@ async function doRefresh(){
 }
 
 const _msState={};
-const _refMsIds=new Set(['rWs','rDs','rOwn']);
-const _invMsIds=new Set(['iWs','iType']);
-const ALL_DIMS = ['workspace','item','item_kind','operation','status','user'];
+const _refMsIds=new Set(['rDom','rWs','rDs','rOwn']);
+const _invMsIds=new Set(['iDom','iWs','iType']);
+const ALL_DIMS = ['domain','workspace','item','item_kind','operation','status','user'];
 const DIM_LABELS = {
-  workspace:'Workspace', item:'Item', item_kind:'Item Kind', operation:'Operation', status:'Status', user:'User'
+  domain:'Domain', workspace:'Workspace', item:'Item', item_kind:'Item Kind', operation:'Operation', status:'Status', user:'User'
 };
 const _drillMsIds = new Set(ALL_DIMS.map(f => 'dr-' + f));
 function buildMultiSelect(containerId,values){
@@ -1148,15 +1155,16 @@ function activityItemLabel(e){
 
 function getActivityFilters(){
   const type=[...(_msState['fType']||new Set())];
+  const dom=[...(_msState['fDomain']||new Set())];
   const ws=[...(_msState['fWs']||new Set())];
   const item=[...(_msState['fItem']||new Set())];
   const user=[...(_msState['fUser']||new Set())];
   const status=document.getElementById('fStatus').value;
-  return {type,ws,item,user,status};
+  return {type,dom,ws,item,user,status};
 }
 
 function hasActiveActivityFilters(filters){
-  return filters.type.length||filters.ws.length||filters.item.length||filters.user.length||filters.status;
+  return filters.type.length||filters.dom.length||filters.ws.length||filters.item.length||filters.user.length||filters.status;
 }
 
 function shouldUseServerChartAggregates(){
@@ -1225,10 +1233,12 @@ document.addEventListener('click',()=>{
 
 function populateFilters(){
   const ops = _activityFilterOptions?.type || [...new Set(_allEvents.map(e=>e.Activity||e.OperationName||'').filter(Boolean))].sort();
+  const doms = _activityFilterOptions?.domain || [...new Set(_allEvents.map(e=>e.domain||'').filter(Boolean))].sort();
   const wss = _activityFilterOptions?.ws || [...new Set(_allEvents.map(e=>e.WorkSpaceName||e.WorkspaceName||'').filter(Boolean))].sort();
   const items = _activityFilterOptions?.item || [...new Set(_allEvents.map(activityItemLabel).filter(Boolean))].sort();
   const users = _activityFilterOptions?.user || [...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
   buildMultiSelect('ms-fType',ops);
+  buildMultiSelect('ms-fDomain',doms);
   buildMultiSelect('ms-fWs',wss);
   buildMultiSelect('ms-fItem',items);
   buildMultiSelect('ms-fUser',users);
@@ -1254,17 +1264,20 @@ function applyFilters(){
     _activityAggregatesFilterKey=JSON.stringify(getActivityFilters());
   }
   const selType=new Set(filters.type);
+  const selDom=new Set(filters.dom);
   const selWs=new Set(filters.ws);
   const selItem=new Set(filters.item);
   const selUser=new Set(filters.user);
   const fStatus=filters.status;
   const filtered=_allEvents.filter(e=>{
     const op  =e.Activity||e.OperationName||'';
+    const dom =e.domain||'';
     const ws  =e.WorkSpaceName||e.WorkspaceName||'';
     const it  =activityItemLabel(e);
     const user=e.UserId||e.UserName||'';
     const ok  =e.IsSuccess!==false;
     if(selType.size>0&&!selType.has(op))  return false;
+    if(selDom.size>0 &&!selDom.has(dom)) return false;
     if(selWs.size>0  &&!selWs.has(ws))   return false;
     if(selItem.size>0&&!selItem.has(it)) return false;
     if(selUser.size>0&&!selUser.has(user))return false;
@@ -1278,7 +1291,7 @@ function applyFilters(){
 }
 
 function clearFilters(){
-  ['fType','fWs','fItem','fUser'].forEach(id=>clearMs(id));
+  ['fType','fDomain','fWs','fItem','fUser'].forEach(id=>clearMs(id));
   document.getElementById('fStatus').value='';
   applyFilters();
 }
@@ -1496,6 +1509,7 @@ function renderTable(ev){
       <th onclick="sortBy('CreationTime')">Time${sa('CreationTime')}</th>
       <th onclick="sortBy('Activity')">Operation${sa('Activity')}</th>
       <th onclick="sortBy('UserId')">User${sa('UserId')}</th>
+      <th onclick="sortBy('domain')">Domain${sa('domain')}</th>
       <th onclick="sortBy('ReportName')">Item${sa('ReportName')}</th>
       <th onclick="sortBy('WorkSpaceName')">Workspace${sa('WorkSpaceName')}</th>
       <th onclick="sortBy('ConsumptionMethod')">Method${sa('ConsumptionMethod')}</th>
@@ -1515,6 +1529,7 @@ function renderTable(ev){
         <td style="font-size:10px">${ts}</td>
         <td>${opBadge(op)}</td>
         <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${user}</td>
+        <td style="font-size:10px;color:var(--dim)">${e.domain||'—'}</td>
         <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${item}">${item}</td>
         <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${ws}</td>
         <td style="font-size:10px;color:var(--dim)">${met}</td>
@@ -1684,7 +1699,7 @@ function applyDrillFilters(mode) {
 }
 
 // Dimension state (group-by pills)
-let _activeDims = new Set(['workspace']);
+let _activeDims = new Set(['domain']);
 let _lastRows   = [];
 let _lastMode   = 'interactive';
 
@@ -1827,6 +1842,7 @@ let _refAll = [];
 let _refSort = 'daily_load_min';
 let _refSortAsc = false;
 let refHourChart, refStatusChart, refDurChart;
+let _invDomainCharts = {};
 
 function initRefCharts(){
   if(typeof Chart === 'undefined'){
@@ -1881,9 +1897,11 @@ function refWorkspaceKey(r){
 }
 
 function buildRefFilters(){
+  const domains    = [...new Set(_refAll.map(r=>r.domain||'').filter(Boolean))].sort();
   const workspaces = [...new Set(_refAll.map(refWorkspaceKey))].sort();
   const names  = [...new Set(_refAll.map(r=>r.name||'').filter(Boolean))].sort();
   const owners = [...new Set(_refAll.map(r=>r.configured_by||'').filter(Boolean))].sort();
+  buildMultiSelect('ms-rDom', domains);
   buildMultiSelect('ms-rWs', workspaces);
   buildMultiSelect('ms-rDs', names);
   buildMultiSelect('ms-rOwn', owners);
@@ -1891,6 +1909,7 @@ function buildRefFilters(){
 
 function applyRefFilters(){
   if(!_refAll.length) return;
+  const selDom  = _msState['rDom'] || new Set();
   const selWs   = _msState['rWs'] || new Set();
   const selDs   = _msState['rDs'] || new Set();
   const selOwn  = _msState['rOwn'] || new Set();
@@ -1898,6 +1917,7 @@ function applyRefFilters(){
   const status   = document.getElementById('rStatus').value;
 
   let filtered = _refAll.filter(r => {
+    if(selDom.size>0  && !selDom.has(r.domain||''))            return false;
     if(selWs.size>0   && !selWs.has(refWorkspaceKey(r)))       return false;
     if(selDs.size>0   && !selDs.has(r.name||''))               return false;
     if(selOwn.size>0 && !selOwn.has(r.configured_by||''))      return false;
@@ -1915,7 +1935,7 @@ function applyRefFilters(){
 }
 
 function clearRefFilters(){
-  ['rWs','rDs','rOwn'].forEach(id => { if(_msState[id]) _msState[id].clear(); buildMultiSelect('ms-'+id, []); });
+  ['rDom','rWs','rDs','rOwn'].forEach(id => { if(_msState[id]) _msState[id].clear(); buildMultiSelect('ms-'+id, []); });
   buildRefFilters();
   document.getElementById('rSched').value='';
   document.getElementById('rStatus').value='';
@@ -2031,6 +2051,7 @@ function renderRefTable(data){
   _currentRefRows = data;
   tbl.innerHTML = `<table>
     <thead><tr>
+      <th onclick="refSortBy('domain')">Domain${sa('domain')}</th>
       <th onclick="refSortBy('workspace')">Workspace${sa('workspace')}</th>
       <th onclick="refSortBy('name')">Dataset${sa('name')}</th>
       <th onclick="refSortBy('configured_by')">Configured By${sa('configured_by')}</th>
@@ -2046,6 +2067,7 @@ function renderRefTable(data){
       <th onclick="refSortBy('last_end')">Last Refresh${sa('last_end')}</th>
     </tr></thead>
     <tbody>${sorted.slice(0,500).map(r=>`<tr>
+      <td style="font-size:10px;color:var(--dim)">${r.domain||'—'}</td>
       <td style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)" title="${r.workspace}">${r.workspace||'—'}</td>
       <td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cu)" title="${r.name}">${r.name}</td>
       <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${r.configured_by||'—'}</td>
@@ -2060,6 +2082,7 @@ function renderRefTable(data){
       <td>${statusBadge(r.last_status)}</td>
       <td style="font-size:10px;color:var(--dim)">${r.last_end?fmtDateTime(r.last_end):'—'}</td>
     </tr>`).join('')}</tbody>
+
   </table>
   ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 500 of ${sorted.length} datasets</div>`:''}`;
 }
@@ -2103,8 +2126,10 @@ async function loadInventory(){
 function buildInvFilters(){
   const wss=[...new Set(_invAll.map(r=>r.workspaceName||'').filter(Boolean))].sort();
   const types=[...new Set(_invAll.map(r=>r.type||'').filter(Boolean))].sort();
+  const domains=[...new Set(_invAll.map(r=>r.domain||'').filter(Boolean))].sort();
   buildMultiSelect('ms-iWs',wss);
   buildMultiSelect('ms-iType',types);
+  buildMultiSelect('ms-iDom',domains);
 }
 
 function applyInvFilters(){
@@ -2119,10 +2144,12 @@ function applyInvFilters(){
   }
   const selWs=_msState['iWs']||new Set();
   const selTy=_msState['iType']||new Set();
+  const selDom=_msState['iDom']||new Set();
   const q=(document.getElementById('invSearch').value||'').trim().toLowerCase();
   const filtered=_invAll.filter(r=>{
     if(selWs.size>0&&!selWs.has(r.workspaceName||'')) return false;
     if(selTy.size>0&&!selTy.has(r.type||'')) return false;
+    if(selDom.size>0&&!selDom.has(r.domain||'')) return false;
     if(q&&!String(r.name||'').toLowerCase().includes(q)) return false;
     return true;
   });
@@ -2143,13 +2170,14 @@ function applyInvFilters(){
   const counts={};
   sorted.forEach(r=>{const t=r.type||'Unknown';counts[t]=(counts[t]||0)+1;});
   renderInvTypeChart(counts);
+  renderInvDomainCharts(sorted);
   renderInvTable(sorted);
   document.getElementById('invTcount').textContent=sorted.length+' rows';
   document.getElementById('invCount').textContent=sorted.length.toLocaleString();
 }
 
 function clearInvFilters(){
-  ['iWs','iType'].forEach(id=>{if(_msState[id])_msState[id].clear();buildMultiSelect('ms-'+id,[]);});
+  ['iDom','iWs','iType'].forEach(id=>{if(_msState[id])_msState[id].clear();buildMultiSelect('ms-'+id,[]);});
   document.getElementById('invSearch').value='';
   buildInvFilters();
   applyInvFilters();
@@ -2163,6 +2191,81 @@ function renderInvTypeChart(counts){
   invTypeChart.update();
 }
 
+function renderInvDomainCharts(data) {
+  const container = document.getElementById('invDomainChartsGrid');
+  if (!container || typeof Chart === 'undefined') return;
+  
+  const typeMap = {};
+  data.forEach(r => {
+    const t = r.type || 'Unknown';
+    const d = r.domain || 'No Domain';
+    if (!typeMap[t]) typeMap[t] = {};
+    typeMap[t][d] = (typeMap[t][d] || 0) + 1;
+  });
+
+  const currentTypes = Object.keys(typeMap).sort();
+  
+  for (const t in _invDomainCharts) {
+    if (!typeMap[t]) {
+      _invDomainCharts[t].destroy();
+      delete _invDomainCharts[t];
+      const safeId = t.replace(/\W/g, '');
+      const el = document.getElementById('idc-wrap-' + safeId);
+      if (el) el.remove();
+    }
+  }
+
+  currentTypes.forEach(t => {
+    const pairs = Object.entries(typeMap[t]).sort((a,b) => b[1] - a[1]);
+    const labels = pairs.map(p => p[0]);
+    const values = pairs.map(p => p[1]);
+    const safeId = t.replace(/\W/g, '');
+
+    if (!_invDomainCharts[t]) {
+      const wrap = document.createElement('div');
+      wrap.className = 'cc';
+      wrap.id = 'idc-wrap-' + safeId;
+      wrap.innerHTML = `
+        <div class="ct">${t}</div>
+        <div class="cs">Objects by Domain</div>
+        <div class="cw"><canvas id="idc-canvas-${safeId}"></canvas></div>
+      `;
+      container.appendChild(wrap);
+
+      const ctx = document.getElementById(`idc-canvas-${safeId}`).getContext('2d');
+      const gc='rgba(30,45,69,0.5)', tk={color:'#64748b',font:{family:'JetBrains Mono',size:9}};
+      
+      _invDomainCharts[t] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: t,
+            data: values,
+            backgroundColor: 'rgba(0,212,255,0.5)',
+            borderColor: '#00d4ff',
+            borderWidth: 1,
+            borderRadius: 2
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {legend:{display:false}},
+          scales: {
+            x: {ticks:tk, grid:{color:gc}},
+            y: {beginAtZero:true, ticks:tk, grid:{color:gc}}
+          }
+        }
+      });
+    } else {
+      const ch = _invDomainCharts[t];
+      ch.data.labels = labels;
+      ch.data.datasets[0].data = values;
+      ch.update();
+    }
+  });
+}
+
 function renderInvTable(data){
   const tbl=document.getElementById('invTbl');
   if(!data.length){tbl.innerHTML='<div class="empty">No rows match the filters</div>';return;}
@@ -2171,12 +2274,14 @@ function renderInvTable(data){
     <thead><tr>
       <th onclick="invSortBy('type')">Type${sa('type')}</th>
       <th onclick="invSortBy('name')">Name${sa('name')}</th>
+      <th onclick="invSortBy('domain')">Domain${sa('domain')}</th>
       <th onclick="invSortBy('workspaceName')">Workspace${sa('workspaceName')}</th>
       <th onclick="invSortBy('itemId')">Item Id${sa('itemId')}</th>
     </tr></thead>
     <tbody>${data.slice(0,2000).map(r=>`<tr>
       <td><span class="badge b-view">${invEscape(r.type||'')}</span></td>
       <td style="font-size:10px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.name)}">${invEscape(r.name||'')}</td>
+      <td style="font-size:10px;color:var(--dim)">${invEscape(r.domain||'—')}</td>
       <td style="font-size:10px;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.workspaceName)}">${invEscape(r.workspaceName||'')}</td>
       <td style="font-size:9px;color:var(--dim)">${invEscape(r.itemId||'')}</td>
     </tr>`).join('')}</tbody>
@@ -2195,6 +2300,7 @@ function exportInventoryToExcel(){
   exportRowsToExcel('Fabric_Inventory.xls',_currentInvRows,[
     {label:'Type',value:r=>r.type||''},
     {label:'Name',value:r=>r.name||''},
+    {label:'Domain',value:r=>r.domain||''},
     {label:'Workspace',value:r=>r.workspaceName||''},
     {label:'Item Id',value:r=>r.itemId||''},
     {label:'Description',value:r=>r.description||''}
@@ -2238,6 +2344,7 @@ function exportActivityToExcel(){
     {label:'Time', value:e=>e.CreationTime?fmtDateTime(e.CreationTime):'',},
     {label:'Operation', value:e=>e.Activity||e.OperationName||''},
     {label:'User', value:e=>e.UserId||e.UserName||''},
+    {label:'Domain', value:e=>e.domain||''},
     {label:'Item', value:e=>e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||''},
     {label:'Workspace', value:e=>e.WorkSpaceName||e.WorkspaceName||''},
     {label:'Method', value:e=>e.ConsumptionMethod||e.UserAgent||''},
@@ -2249,6 +2356,7 @@ function exportActivityToExcel(){
 function exportRefreshesToExcel(){
   if(!_currentRefRows.length){alert('No data to export.');return;}
   exportRowsToExcel('Fabric_Refreshes_Details.xls', _currentRefRows, [
+    {label:'Domain', value:r=>r.domain||''},
     {label:'Workspace', value:r=>r.workspace||''},
     {label:'Dataset', value:r=>r.name||''},
     {label:'Configured By', value:r=>r.configured_by||''},

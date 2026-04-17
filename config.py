@@ -52,5 +52,5 @@ if _missing:
     print("  Copy .env.example to .env and fill in the values.\n")
     sys.exit(1)
 
-SCOPES           = ["https://analysis.windows.net/powerbi/api/.default"]
-PUBLIC_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+SCOPES = ["https://analysis.windows.net/powerbi/api/.default"]
+PUBLIC_CLIENT_ID = "23d8f6bd-1eb0-4cc2-a08c-7bf525c67bcd"

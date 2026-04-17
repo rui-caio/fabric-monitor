@@ -14,14 +14,6 @@ from api.inventory import handle_inventory
 _auth_thread = None
 _auth_thread_lock = threading.Lock()
 
-_here = os.path.dirname(os.path.abspath(__file__))
-with open(os.path.join(_here, "static", "index.html"), encoding="utf-8") as _f:
-    _HTML = (
-        _f.read()
-        .replace("{{ORG_NAME}}", ORG_NAME)
-        .replace("__FM_DISPLAY__", FM_DISPLAY_JS)
-        .encode()
-    )
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -47,11 +39,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
+            _here = os.path.dirname(os.path.abspath(__file__))
+            with open(os.path.join(_here, "static", "index.html"), encoding="utf-8") as _f:
+                html = (
+                    _f.read()
+                    .replace("{{ORG_NAME}}", ORG_NAME)
+                    .replace("__FM_DISPLAY__", FM_DISPLAY_JS)
+                    .encode()
+                )
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", len(_HTML))
+            self.send_header("Content-Length", len(html))
             self.end_headers()
-            self.wfile.write(_HTML)
+            self.wfile.write(html)
         elif self.path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
@@ -70,7 +70,11 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/timepoint":   self.send_json(200, handle_timepoint(payload))
             elif self.path == "/api/refreshes":   self.send_json(200, handle_refreshes(payload))
             elif self.path == "/api/inventory":   self.send_json(200, handle_inventory(payload))
+            elif self.path == "/api/domain_status":
+                from api.domains import get_domain_status
+                self.send_json(200, get_domain_status())
             else:                                 self.send_json(404, {"error": "Unknown endpoint"})
+
         except Exception as e:
             print(f"  ERROR: {e}")
             self.send_json(500, {"error": str(e)})
@@ -119,10 +123,13 @@ def main():
 
     try:
         get_token()
+        from api.domains import load_domains_map
+        load_domains_map()
     except Exception as e:
         print(f"\n  ERROR: Sign-in failed: {e}")
         print("  Fix the issue and restart.\n")
         return
+
 
     import socket
     try:

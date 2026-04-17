@@ -336,9 +336,13 @@ def handle_activity(payload):
         op = event.get('Activity') or event.get('OperationName') or ''
         ws = event.get('WorkSpaceName') or event.get('WorkspaceName') or ''
         user = event.get('UserId') or event.get('UserName') or ''
+        dom = event.get('domain') or ''
         status = flt.get('status', '')
         if flt.get('type'):
             if op not in flt['type']:
+                return False
+        if flt.get('domain'):
+            if dom not in flt['domain']:
                 return False
         if flt.get('ws'):
             if ws not in flt['ws']:
@@ -354,6 +358,7 @@ def handle_activity(payload):
         if status == 'fail' and event.get('IsSuccess') is not False:
             return False
         return True
+
 
     warning = None
     try:
@@ -381,12 +386,21 @@ def handle_activity(payload):
     original_count = len(all_events)
     print(f"  Activity API: {original_count} events loaded")
 
+    from api.domains import get_domain_for_workspace
+    for e in all_events:
+        ws_id = e.get("WorkspaceId")
+        ws_name = e.get("WorkSpaceName") or e.get("WorkspaceName")
+        e["domain"] = get_domain_for_workspace(workspace_id=ws_id, workspace_name=ws_name)
+
     filter_options = {
         "type": sorted({
             e.get('Activity') or e.get('OperationName') or '' for e in all_events if e.get('Activity') or e.get('OperationName')
         }),
         "ws": sorted({
             e.get('WorkSpaceName') or e.get('WorkspaceName') or '' for e in all_events if e.get('WorkSpaceName') or e.get('WorkspaceName')
+        }),
+        "domain": sorted({
+            e.get("domain") for e in all_events if e.get("domain")
         }),
         "user": sorted({
             e.get('UserId') or e.get('UserName') or '' for e in all_events if e.get('UserId') or e.get('UserName')
@@ -395,6 +409,9 @@ def handle_activity(payload):
             _item_from_event(e) for e in all_events if _item_from_event(e)
         }),
     }
+
+
+
 
     summary_totals = {
         "totalEvents": original_count,

@@ -97,10 +97,13 @@ def _fabric_items_for_workspace(fabric_token, workspace_id, workspace_name):
         if status != 200:
             err = data.get("error") if isinstance(data, dict) else str(data)
             return None, f"HTTP {status}: {err}"
+        from api.domains import get_domain_for_workspace
+        dom = get_domain_for_workspace(workspace_id=workspace_id, workspace_name=workspace_name)
         for it in data.get("value") or []:
             items.append({
                 "workspaceId": workspace_id,
                 "workspaceName": workspace_name,
+                "domain": dom,
                 "itemId": it.get("id") or "",
                 "name": it.get("displayName") or "",
                 "type": it.get("type") or "Unknown",
@@ -131,9 +134,11 @@ def _pbi_artifacts_for_workspace(pbi_token, workspace_id, workspace_name, warnin
             for r in _pbi_get_json_paged(url, pbi_token):
                 name = r.get(name_field) or r.get("name") or ""
                 item_id = (r.get("objectId") or r.get("id") or "") if path == "dataflows" else (r.get("id") or "")
+                from api.domains import get_domain_for_workspace
                 out.append({
                     "workspaceId": workspace_id,
                     "workspaceName": workspace_name,
+                    "domain": get_domain_for_workspace(workspace_id=workspace_id, workspace_name=workspace_name),
                     "itemId": item_id,
                     "name": name,
                     "type": typ,
@@ -181,14 +186,18 @@ def _pbi_artifacts_bulk_admin(pbi_token, workspaces_subset, warnings):
                 if not wsid or str(wsid).lower() not in ws_set:
                     continue
                 wkey = str(wsid).lower()
+                ws_name_val = ws_name.get(wkey, "")
+                from api.domains import get_domain_for_workspace
                 out.append({
                     "workspaceId": wsid,
-                    "workspaceName": ws_name.get(wkey, ""),
+                    "workspaceName": ws_name_val,
+                    "domain": get_domain_for_workspace(workspace_id=wsid, workspace_name=ws_name_val),
                     "itemId": get_id(r),
                     "name": get_name(r),
                     "type": typ,
                     "description": "",
                 })
+
             url = data.get("@odata.nextLink")
 
     return out
@@ -220,7 +229,13 @@ def handle_inventory(payload):
                 items.extend(witems)
                 fabric_ok_ids.add(str(wid).lower())
             else:
-                warnings.append(f"{wname} (Fabric): {err}")
+                if "HTTP 401" in err:
+                    pass # User is not authorized for this specific workspace, expected
+                elif "HTTP 429" in err:
+                    # User requested to silently drop the warning for rate limits.
+                    break # Stop hitting Fabric API to respect rate limit
+                else:
+                    warnings.append(f"{wname} (Fabric): {err}")
 
     need_pbi = [w for w in workspaces if str(w["id"]).lower() not in fabric_ok_ids]
 

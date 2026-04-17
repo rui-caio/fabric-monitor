@@ -17,7 +17,7 @@ Visualises compute unit (CU) consumption over time by querying the **Microsoft F
 - **Sortable detail table** — every timepoint listed with its Interactive %, Background %, and computed SKU CU %, colour-coded by severity thresholds
 - **Timepoint drill-down panel** — click any bar on the chart to open a side panel with the full operation list for that 30-second timepoint:
   - Switch between **Interactive** and **Background** operation modes
-  - **Group by** any combination of dimensions: **Operation**, **User**, **Item**, **Workspace**, and **Unique Key** — metrics are aggregated across the active grouping
+  - **Group by** any combination of dimensions: **Domain**, **Workspace**, **Item**, **Item Kind**, **Operation**, **Status**, and **User** — metrics are aggregated across the active grouping
   - **Filter pills** for each dimension — multi-value dropdown filters applied locally without an extra API call
   - Metric summary cards showing total CU (s), Timepoint CU (s), Duration (s), and % Capacity for the current view
   - CU bar chart per row to visualise relative cost at a glance
@@ -36,11 +36,11 @@ Reads Power BI user activity events from the **Power BI Activity Events Admin AP
 - **Artifact Type chart** — distribution of operations by ArtifactKind or ObjectType (Report, Dashboard, Dataset, Dataflow, etc.)
 - **Operation Type chart** — top 12 operation types by frequency, covering the full range of Power BI activity event names
 - **Rankings section** — top 15 leaderboards for: most-viewed reports, most-accessed datasets, most-active users, most-active workspaces, external applications (by AppName/UserAgent), and operations with the most failures
-- **Multi-select filters** — filter by **operation type**, **workspace**, **item**, and **user** simultaneously; a status toggle filters for successful or failed events only. Filters are applied client-side on cached data; when the dataset is truncated the backend is re-queried with the active filter set to return full results
-- **Sortable detail table** — up to 500 rows displayed, sortable by any column (Time, Operation, User, Item, Workspace, Method, IP, Status); includes operation-type colour badges
+- **Multi-select filters** — filter by **domain**, **operation type**, **workspace**, **item**, and **user** simultaneously; a status toggle filters for successful or failed events only. Filters are applied client-side on cached data; when the dataset is truncated the backend is re-queried with the active filter set to return full results
+- **Sortable detail table** — up to 500 rows displayed, sortable by any column (Time, Domain, Operation, User, Item, Workspace, Method, IP, Status); includes operation-type colour badges
 - **Configurable time window** — from the last hour up to the last 30 days; the cache stores data per hour-long chunk so re-loading a previously fetched range is instantaneous
 - **Large dataset handling** — when the event count exceeds 10,000, only the most recent events are sent to the browser; a warning banner explains the truncation and filters trigger a fresh server-side query
-- **Export to Excel** — exports all current activity rows with columns: Time, Operation, User, Item, Workspace, Method, IP, Status
+- **Export to Excel** — exports all current activity rows with columns: Time, Domain, Operation, User, Item, Workspace, Method, IP, Status
 
 ---
 
@@ -53,8 +53,8 @@ Reads dataset refresh metadata from the **Power BI Capacity Refreshables Admin A
 - **Last Refresh Status donut** — proportion of datasets with their last refresh in Completed, Failed, or Unknown state
 - **Duration Distribution chart** — histogram of average refresh durations bucketed into six ranges (< 0.5 min, 0.5–1 min, 1–5 min, 5–15 min, 15–30 min, > 30 min)
 - **Rankings section** — top 15 datasets by: daily load (avg duration × refreshes per day), total refreshes executed, total failures, and average duration; each with a proportional bar
-- **Filters** — multi-select by **Workspace**, **Dataset**, and **Configured by**; dropdowns for schedule status (Active / Inactive / No schedule) and last refresh status (Completed / Failed / Unknown)
-- **Sortable detail table** — all datasets with columns: Workspace, Dataset, Configured By, Schedule status badge, Ref/Day (actual count from schedule times, not the capacity maximum), Times, Days, Avg Duration (min), Load/Day (min), Total Ref., Failures, Last Status, Last Refresh timestamp. Duration and load columns are colour-coded: amber above 5 min average, red above 30 min daily load
+- **Filters** — multi-select by **Domain**, **Workspace**, **Dataset**, and **Configured by**; dropdowns for schedule status (Active / Inactive / No schedule) and last refresh status (Completed / Failed / Unknown)
+- **Sortable detail table** — all datasets with columns: Domain, Workspace, Dataset, Configured By, Schedule status badge, Ref/Day (actual count from schedule times, not the capacity maximum), Times, Days, Avg Duration (min), Load/Day (min), Total Ref., Failures, Last Status, Last Refresh timestamp. Duration and load columns are colour-coded: amber above 5 min average, red above 30 min daily load
 - **Export to Excel** — exports the full filtered dataset list with all columns
 
 ---
@@ -65,8 +65,9 @@ Lists artefacts in **workspaces assigned to the configured capacity** (`CAPACITY
 
 - **Workspace discovery** — `GET /admin/groups` with OData filter `capacityId eq '{CAPACITY_ID}'` (the non-admin path `/capacities/{id}/workspaces` does not exist). If Admin APIs are forbidden, the app falls back to `GET /groups` and keeps workspaces whose `capacityId` matches.
 - **Power BI enumeration (default)** — uses **bulk tenant-wide Admin APIs** with pagination (`/admin/reports`, `/admin/datasets`, `/admin/dashboards`, `/admin/dataflows`) and **filters in memory** to the capacity workspace set. This avoids hundreds of per-workspace calls that trigger HTTP **429** throttling.
-- **Fabric enumeration (optional)** — if a **cached** token for scope `https://api.fabric.microsoft.com/Workspace.Read.All` is available (silent MSAL only; no second device login), **List Items** is used per workspace for full Fabric types (lakehouses, notebooks, etc.). Workspaces covered by Fabric skip the Power BI pass for that workspace.
-- **UI** — filters (Workspace, Type, name search), counts by type (chart + summary), sortable table, Excel export.
+- **Fabric enumeration (optional)** — if a token for scope `Workspace.Read.All` is acquired, **List Items** is used per workspace for full Fabric types (lakehouses, notebooks, etc.). Workspaces covered by Fabric skip the Power BI pass for that workspace. Fallback mechanisms handle 429 Rate Limits automatically.
+- **Dynamic Domain Charts** — dynamic distribution bar charts automatically generated per artifact type, grouping object counts by Domain.
+- **UI** — filters (Domain, Workspace, Type, name search), counts by type, sortable table (including Domain mapping), Excel export.
 
 Microsoft documents **strict rate limits** on Admin list APIs (for example, low requests per minute per tenant). Very large tenants may still hit 429; retry later or rely on caching if you add it later.
 
@@ -206,7 +207,7 @@ On the first run, the terminal displays a device code prompt:
 3. Sign in with your Microsoft account with the required permissions
 4. Return to the terminal — authentication completes automatically
 
-The token is kept in memory for the duration of the session. On the next run, if the token is still valid, authentication is silent.
+The token is cached securely to a local file (`.token_cache.bin`). On subsequent runs, authentication is completely silent — you will never have to log in again.
 
 ### Open the dashboard
 

@@ -31,10 +31,14 @@ def handle_refreshes(payload):
             med_min = round(med_s / 60, 2) if med_s is not None else None
             daily_load = round(avg_min * rpd, 2) if avg_min is not None and rpd else None
 
+            ws_name = group.get("name","")
+            ws_id = group.get("id","")
+            from api.domains import get_domain_for_workspace
             all_rows.append({
                 "id":               r.get("id",""),
                 "name":             r.get("name",""),
-                "workspace":        group.get("name",""),
+                "workspace":        ws_name,
+                "domain":           get_domain_for_workspace(workspace_id=ws_id, workspace_name=ws_name),
                 "kind":             r.get("kind",""),
                 "refresh_count":    r.get("refreshCount") or 0,
                 "refresh_failures": r.get("refreshFailures") or 0,
@@ -53,6 +57,7 @@ def handle_refreshes(payload):
                 "last_type":        lr.get("refreshType",""),
                 "last_error":       "",
             })
+
         url = data.get("@odata.nextLink")
 
     datasets = [r for r in all_rows if r["kind"] == "Dataset"]
