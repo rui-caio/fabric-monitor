@@ -278,7 +278,7 @@ The server exposes the following endpoints at `http://localhost:8765`:
 | API | Purpose |
 |-----|---------|
 | [Power BI Activity Events API](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/get-activity-events) | User activity log |
-| [Power BI Capacity Refreshables API](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/get-capacities-refreshables) | Dataset refresh metrics and schedules |
+| [Power BI Capacity Refreshables API](https://learn.microsoft.com/rest/api/power-bi/capacities/get-refreshables-for-capacity) | Dataset refresh metrics and schedules |
 | [Power BI Execute Queries API](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/execute-queries-in-group) | DAX queries against the Capacity Metrics dataset |
 | [Power BI Admin — Groups](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/groups-get-groups-as-admin), [Reports/Datasets/Dashboards/Dataflows as Admin](https://learn.microsoft.com/en-us/rest/api/power-bi/admin) | Inventory: workspaces on capacity + tenant-wide artefact lists (filtered server-side) |
 
