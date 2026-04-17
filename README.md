@@ -114,7 +114,7 @@ Chart.js is loaded automatically via CDN — internet access is required on firs
 
 ### 3. Microsoft Fabric Capacity Metrics app
 
-The capacity utilisation data is read through the official **Microsoft Fabric Capacity Metrics** app, which must be installed in your tenant.
+The capacity utilisation data is read through the official **Microsoft Fabric Capacity Metrics** app (**version 65**), which must be installed in your tenant.
 
 You need two IDs from that app's dataset:
 
@@ -319,7 +319,7 @@ The MSAL token is held in memory only. Restarting the server will prompt for aut
 The authenticated account does not have **Power BI Administrator** or **Fabric Administrator** role. Contact your tenant administrator.
 
 ### `Capacity API error 404` or empty data
-Verify that `METRICS_WS` and `METRICS_DS` match the workspace and dataset of the **Microsoft Fabric Capacity Metrics** app in your tenant.
+Verify that `METRICS_WS` and `METRICS_DS` match the workspace and dataset of the **Microsoft Fabric Capacity Metrics** app (**version 65**) in your tenant.
 
 ### Browser shows "Proxy not detected"
 The Python server is not running or is using a different port. Confirm that `python fabric_proxy.py` is active in the terminal and that the `PORT` value in `.env` matches the URL you are accessing.

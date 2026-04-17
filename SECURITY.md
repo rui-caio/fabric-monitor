@@ -14,9 +14,10 @@ We take the security of Fabric Monitor seriously. If you find a security vulnera
 
 ### How to report
 
-Please send an email to **[INSERT SECURITY EMAIL]**. 
+Please send an email to <rui.caio@niw.pt>.
 
 Include the following information:
+
 - Description of the vulnerability.
 - Steps to reproduce (proof of concept).
 - Potential impact.

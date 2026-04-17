@@ -635,7 +635,9 @@
         <span class="dim-label">Group by:</span>
         <label class="dim-pill active" onclick="toggleDim('workspace')"><span>Workspace</span></label>
         <label class="dim-pill" onclick="toggleDim('item')"><span>Item</span></label>
+        <label class="dim-pill" onclick="toggleDim('item_kind')"><span>Item Kind</span></label>
         <label class="dim-pill" onclick="toggleDim('operation')"><span>Operation</span></label>
+        <label class="dim-pill" onclick="toggleDim('status')"><span>Status</span></label>
         <label class="dim-pill" onclick="toggleDim('user')"><span>User</span></label>
       </div>
       <div class="drill-filter-row" id="drillFilterRow">
@@ -1012,9 +1014,9 @@ async function doRefresh(){
 const _msState={};
 const _refMsIds=new Set(['rWs','rDs','rOwn']);
 const _invMsIds=new Set(['iWs','iType']);
-const ALL_DIMS = ['workspace','item','operation','user'];
+const ALL_DIMS = ['workspace','item','item_kind','operation','status','user'];
 const DIM_LABELS = {
-  workspace:'Workspace', item:'Item', operation:'Operation', user:'User'
+  workspace:'Workspace', item:'Item', item_kind:'Item Kind', operation:'Operation', status:'Status', user:'User'
 };
 const _drillMsIds = new Set(ALL_DIMS.map(f => 'dr-' + f));
 function buildMultiSelect(containerId,values){
@@ -1711,6 +1713,7 @@ function groupRows(rows, dims) {
       entry.total_cu    = 0;
       entry.timepoint_cu = 0;
       entry.duration    = 0;
+      entry.throttling  = 0;
       entry.pct_capacity = 0;
       entry._count      = 0;
       map.set(key, entry);
@@ -1719,6 +1722,7 @@ function groupRows(rows, dims) {
     e.total_cu     += Number(r.total_cu     || 0);
     e.timepoint_cu += Number(r.timepoint_cu || 0);
     e.duration     += Number(r.duration     || 0);
+    e.throttling   += Number(r.throttling   || 0);
     e.pct_capacity += Number(r.pct_capacity || 0);
     e._count++;
   }
@@ -1743,6 +1747,7 @@ function renderDrillTable(rows, mode) {
   const totCu  = rows.reduce((s,r)=>s + Number(r.total_cu||0),0);
   const totTp  = rows.reduce((s,r)=>s + Number(r.timepoint_cu||0),0);
   const totDur = rows.reduce((s,r)=>s + Number(r.duration||0),0);
+  const totThr = rows.reduce((s,r)=>s + Number(r.throttling||0),0);
   const sumOpPct = rows.reduce((s,r)=>s + Number(r.pct_capacity||0),0)*100;
   const chartSku = _drillSkuTotalPct(_drillCapPoint);
 
@@ -1773,6 +1778,11 @@ function renderDrillTable(rows, mode) {
       <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--purple)">${totDur.toFixed(1)}s</div>
       <div style="font-size:9px;color:var(--dim);margin-top:2px">total</div>
     </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--danger)">
+      <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Throttling (s)</div>
+      <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--danger)">${totThr.toFixed(1)}s</div>
+      <div style="font-size:9px;color:var(--dim);margin-top:2px">rejected</div>
+    </div>
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px;border-top:2px solid var(--warn)">
       <div style="font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">% SKU <span style="text-transform:none;opacity:.7">(global)</span></div>
       <div style="font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--warn)">${chartSku != null ? chartSku.toFixed(2) : '—'}%</div>
@@ -1795,6 +1805,7 @@ function renderDrillTable(rows, mode) {
         <th>Total CU (s)</th>
         <th>TP CU (s)</th>
         <th>Duration (s)</th>
+        <th>Throttling (s)</th>
         <th title="Per-operation % of base capacity — do not sum to match SKU %">% Capacity <span style="font-weight:400;opacity:.75">(per op.)</span></th>
       </tr></thead>
       <tbody>
@@ -1803,6 +1814,7 @@ function renderDrillTable(rows, mode) {
           <td>${cuBar(r.total_cu)}</td>
           <td style="font-size:10px;color:var(--dim)">${r.timepoint_cu.toFixed(2)}s</td>
           <td style="font-size:10px;color:var(--dim)">${r.duration.toFixed(1)}s</td>
+          <td style="font-size:10px;${r.throttling>0?'color:var(--danger)':''};color:var(--dim)">${r.throttling.toFixed(1)}s</td>
           <td style="font-size:10px;color:var(--warn)">${(r.pct_capacity*100).toFixed(2)}%</td>
         </tr>`).join('')}
       </tbody>
@@ -2263,6 +2275,7 @@ function exportDrillToExcel(){
     {label:'Total CU (s)', value:r=>r.total_cu.toFixed(2)},
     {label:'TP CU (s)', value:r=>r.timepoint_cu.toFixed(2)},
     {label:'Duration (s)', value:r=>r.duration.toFixed(2)},
+    {label:'Throttling (s)', value:r=>r.throttling.toFixed(2)},
     {label:'% Capacity', value:r=>((r.pct_capacity||0)*100).toFixed(2)+'%'}
   ]);
 }
