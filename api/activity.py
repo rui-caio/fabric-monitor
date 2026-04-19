@@ -341,8 +341,8 @@ def handle_activity(payload):
         if flt.get('type'):
             if op not in flt['type']:
                 return False
-        if flt.get('domain'):
-            if dom not in flt['domain']:
+        if flt.get('dom'):
+            if dom not in flt['dom']:
                 return False
         if flt.get('ws'):
             if ws not in flt['ws']:
@@ -380,17 +380,17 @@ def handle_activity(payload):
 
     all_events = [e for e in all_events if _event_in_requested_range(e, request_start, request_end)]
 
-    if filters:
-        all_events = [e for e in all_events if _matches_filters(e, filters)]
-
-    original_count = len(all_events)
-    print(f"  Activity API: {original_count} events loaded")
-
     from api.domains import get_domain_for_workspace
     for e in all_events:
         ws_id = e.get("WorkspaceId")
         ws_name = e.get("WorkSpaceName") or e.get("WorkspaceName")
         e["domain"] = get_domain_for_workspace(workspace_id=ws_id, workspace_name=ws_name)
+
+    if filters:
+        all_events = [e for e in all_events if _matches_filters(e, filters)]
+
+    original_count = len(all_events)
+    print(f"  Activity API: {original_count} events loaded")
 
     filter_options = {
         "type": sorted({
