@@ -52,6 +52,12 @@ ORDER BY 'Timepoints'[Timepoint] ASC"""
             data = json.loads(r.read())
     except urllib.error.HTTPError as e:
         err = e.read().decode(errors="replace")
+        if e.code == 404 and "PowerBIFolderNotFound" in err:
+            err = (
+                f"{err}\n  → Check METRICS_WS in .env: must be the Power BI *workspace* (group) id "
+                f"that contains the capacity metrics dataset (not the capacity id). "
+                f"Service principals need access to that workspace."
+            )
         raise Exception(f"Capacity API erro {e.code}: {err}")
 
     rows = []

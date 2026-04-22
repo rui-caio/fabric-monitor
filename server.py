@@ -4,7 +4,7 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from auth import get_app, get_token
-from config import TENANT_ID, PORT, ORG_NAME, FM_DISPLAY_JS
+from config import AUTH_TYPE, CLIENT_ID, TENANT_ID, PORT, ORG_NAME, FM_DISPLAY_JS
 from api.activity  import handle_activity
 from api.capacity  import handle_capacity
 from api.timepoint import handle_timepoint
@@ -80,13 +80,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": str(e)})
 
     def _auth_status(self):
-        accounts = get_app().get_accounts()
+        if AUTH_TYPE == "client_secret":
+            _cid = (CLIENT_ID or "")[:8]
+            self.send_json(200, {
+                "authenticated": True,
+                "account": f"client_credentials ({_cid}…)" if _cid else "client_credentials",
+                "authenticating": False,
+                "auth_type": "client_secret",
+            })
+            return
+        app = get_app()
+        accounts = app.get_accounts() if app else []
         authenticating = _auth_thread is not None and _auth_thread.is_alive()
         if accounts:
             self.send_json(200, {
                 "authenticated": True,
                 "account": accounts[0].get("username", ""),
                 "authenticating": authenticating,
+                "auth_type": "public",
             })
         else:
             if not authenticating:
@@ -96,6 +107,7 @@ class Handler(BaseHTTPRequestHandler):
                 "authenticated": False,
                 "account": "",
                 "authenticating": authenticating,
+                "auth_type": "public",
             })
 
 
@@ -107,6 +119,8 @@ def _authenticate_background():
 
 
 def _ensure_auth_thread():
+    if AUTH_TYPE == "client_secret":
+        return
     global _auth_thread
     with _auth_thread_lock:
         if _auth_thread is None or not _auth_thread.is_alive():
@@ -119,7 +133,10 @@ def main():
     print("  FABRIC ACTIVITY MONITOR")
     print("═" * 60)
     print(f"\n  Tenant: {TENANT_ID}")
-    print("\n  Sign in first (device code appears below if required).\n")
+    if AUTH_TYPE == "client_secret":
+        print(f"\n  Auth: client credentials (application id: {(CLIENT_ID or '')[:8]}…)\n")
+    else:
+        print("\n  Sign in first (device code appears below if required).\n")
 
     try:
         get_token()

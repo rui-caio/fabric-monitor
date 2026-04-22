@@ -173,9 +173,35 @@ PORT=8765
 # Optional: Timezone for the UI (IANA format or UTC offset)
 DISPLAY_TIMEZONE=Europe/Lisbon
 # DISPLAY_UTC_OFFSET_HOURS=1
+
+# Optional: authentication mode (see "Authentication" below)
+# AUTH_TYPE=public
+# AUTH_TYPE=client_secret
+# CLIENT_ID=
+# CLIENT_SECRET=
 ```
 
-> **Important:** The `.env` file is listed in `.gitignore` and must never be committed or shared. It contains sensitive configuration values.
+> **Important:** The `.env` file is listed in `.gitignore` and must never be committed or shared. It contains sensitive configuration values (including `CLIENT_SECRET` if you use service principal auth).
+
+### Authentication
+
+The app supports two authentication modes, controlled with **`AUTH_TYPE`** in `.env` (default: **`public`**).
+
+| Mode | When to use | Main `.env` fields |
+|------|-------------|-------------------|
+| **`public`** | Interactive sign-in (typical for a user who is a Power BI / Fabric admin). | `TENANT_ID` and the capacity/metrics variables. `CLIENT_ID` is optional: if unset, the built-in Power BI public client is used for **Device Code** sign-in. |
+| **`client_secret`** | Unattended / server runs using a **service principal** (app registration with a client secret). | **`TENANT_ID`**, **`CLIENT_ID`**, **`CLIENT_SECRET`**, plus the same capacity and metrics variables. |
+
+**`client_secret` (service principal) — required setup**
+
+1. **App registration** in Microsoft Entra ID for a confidential client, with **Application** permissions (not only delegated) for the APIs you need, and **admin consent** on the tenant. The app uses client credentials with scopes like `https://analysis.windows.net/powerbi/api/.default` for Power BI, and `https://api.fabric.microsoft.com/.default` for Fabric (List Items, domains, etc.) when you need those features. Grant exactly what your organisation allows: for example **Power BI** application permissions for tenant read / admin operations, and **Fabric** if you use inventory or domain features.
+2. **Capacity Metrics workspace access (mandatory for utilisation and timepoint drill-down):** The service principal must have access to the **same Power BI workspace** whose ID you set in **`METRICS_WS`** — the workspace where the **Microsoft Fabric Capacity Metrics** app and its dataset are installed. Add the app (enterprise application / service principal) as a **Member** (or at least with permission to use the dataset) in that workspace. If Execute Queries is blocked by policy, grant **Build** (or the minimum required) on the **Capacity Metrics** dataset. If this step is skipped, the **Capacity** and **timepoint** API calls often return **404** (`PowerBIFolderNotFound` / workspace cannot be found) because the API resolves the workspace for the **application identity**, not your personal user.
+3. For **Activity**, **Refreshes**, and **Inventory**, the same service principal may need the appropriate **Power BI / Fabric** application roles and, where relevant, access to the same capacity and workspaces you expect a human admin to see. Align with your identity team; permission names differ between delegated and application-only access.
+
+**`public` mode**
+
+- First run uses the **Device Code** flow; the token is cached in **`.token_cache.bin`** (local, not committed to git). Subsequent runs reuse the cache until it expires or is deleted.
+- If you do not need a custom app, leave **`CLIENT_ID`** empty in `.env` for this mode.
 
 ---
 
@@ -189,7 +215,9 @@ python fabric_proxy.py
 
 ### Authentication (first run)
 
-On the first run, the terminal displays a device code prompt:
+**`AUTH_TYPE=client_secret`:** there is no device code. The process acquires a token for the app using **`CLIENT_ID`** and **`CLIENT_SECRET`**. The **service principal** must be allowed to use the **Capacity Metrics** workspace (`METRICS_WS`); see *Authentication* above.
+
+**`AUTH_TYPE=public` (default):** the terminal may show a **device code** on first run, for example:
 
 ```
 ────────────────────────────────────────────────────────────
@@ -207,7 +235,9 @@ On the first run, the terminal displays a device code prompt:
 3. Sign in with your Microsoft account with the required permissions
 4. Return to the terminal — authentication completes automatically
 
-The token is cached securely to a local file (`.token_cache.bin`). On subsequent runs, authentication is completely silent — you will never have to log in again.
+The token is cached securely to a local file (`.token_cache.bin`). On subsequent runs, authentication is usually silent — you will not have to use the device code again until the cache is cleared or the refresh token is invalid.
+
+> With **`client_secret`**, there is no `.token_cache.bin` for user tokens; MSAL keeps app-only tokens in memory for the process lifetime.
 
 ### Open the dashboard
 
@@ -233,7 +263,7 @@ Ctrl+C
 fabric-monitor/
 ├── fabric_proxy.py        # Entry point — starts the HTTP server
 ├── config.py              # Loads .env and exposes configuration constants
-├── auth.py                # MSAL authentication (Device Code Flow; optional silent Fabric scope)
+├── auth.py                # MSAL: public (Device Code) or client credentials; optional Fabric scope
 ├── server.py              # HTTP request handler and main()
 │
 ├── api/
@@ -282,9 +312,10 @@ The server exposes the following endpoints at `http://localhost:8765`:
 | [Power BI Execute Queries API](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/execute-queries-in-group) | DAX queries against the Capacity Metrics dataset |
 | [Power BI Admin — Groups](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/groups-get-groups-as-admin), [Reports/Datasets/Dashboards/Dataflows as Admin](https://learn.microsoft.com/en-us/rest/api/power-bi/admin) | Inventory: workspaces on capacity + tenant-wide artefact lists (filtered server-side) |
 
-Optional: [Microsoft Fabric REST — List Items](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/list-items) when `Workspace.Read.All` is present in the token cache (silent acquisition only).
+Optional: [Microsoft Fabric REST — List Items](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/list-items) with a user token (delegated `Workspace.Read.All` in cache) or, for applications, the corresponding Fabric **application** permissions and `https://api.fabric.microsoft.com/.default`.
 
-Authentication uses [MSAL Device Code Flow](https://learn.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#device-code) for Power BI (`analysis.windows.net/powerbi/api/.default`). No passwords or secrets are stored.
+- **`public` mode** uses the [MSAL device code](https://learn.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#device-code) (or cache) for Power BI (`https://analysis.windows.net/powerbi/api/.default`); no client secret.
+- **`client_secret` mode** uses the [client credentials](https://learn.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-client-creds-grant-flow) flow with the configured app id and secret.
 
 ---
 
@@ -296,6 +327,9 @@ Authentication uses [MSAL Device Code Flow](https://learn.microsoft.com/en-us/az
 | `CAPACITY_ID` | Yes | ID of the Fabric capacity to monitor |
 | `METRICS_WS` | Yes | Workspace ID of the Capacity Metrics app |
 | `METRICS_DS` | Yes | Dataset ID of the Capacity Metrics app |
+| `AUTH_TYPE` | No (default: `public`) | `public` — device code / cached user; `client_secret` (alias: `client_credentials`, `sp`) — service principal |
+| `CLIENT_ID` | If `client_secret` | App (application) id from Entra ID. Optional for `public` (default built-in PBI client) |
+| `CLIENT_SECRET` | If `client_secret` | Client secret of the app registration |
 | `ORG_NAME` | No | Organisation name shown in the dashboard title |
 | `PORT` | No (default: `8765`) | Local server port |
 | `DISPLAY_TIMEZONE` | No | IANA timezone name (e.g. `Europe/Lisbon`) for UI display |
@@ -320,9 +354,9 @@ The MSAL token is held in memory only. Restarting the server will prompt for aut
 The authenticated account does not have **Power BI Administrator** or **Fabric Administrator** role. Contact your tenant administrator.
 
 ### `Capacity API error 404` or empty data
-Verify that `METRICS_WS` and `METRICS_DS` match the workspace and dataset of the **Microsoft Fabric Capacity Metrics** app (**version 65**) in your tenant.
+Verify that `METRICS_WS` and `METRICS_DS` match the workspace and dataset of the **Microsoft Fabric Capacity Metrics** app (**version 65**) in your tenant. If you use **`client_secret`**, the **service principal** must be added to that **same workspace** (see *Authentication* above) — a 404 on `PowerBIFolderNotFound` often means the app identity has no access to the workspace, not a wrong id for your own user.
 
-### Browser shows "Proxy not detected"
+### Dashboard shows the server is not reachable
 The Python server is not running or is using a different port. Confirm that `python fabric_proxy.py` is active in the terminal and that the `PORT` value in `.env` matches the URL you are accessing.
 
 ### Inventory: HTTP 429 or "Retry in … seconds"
@@ -347,6 +381,7 @@ Listing workspaces by `capacityId` requires **GetGroupsAsAdmin** (or the non-adm
 ## Security
 
 - Configuration values (`TENANT_ID`, `CAPACITY_ID`, etc.) are read from environment variables / `.env` file and never hardcoded
-- The `.env` file is excluded from git via `.gitignore`
-- Microsoft authentication uses **Device Code Flow** — no passwords are stored anywhere
-- The HTTP server binds to `0.0.0.0` but only serves data that is already accessible to the authenticated account; no data is stored permanently beyond the activity event cache
+- The `.env` file is excluded from git via `.gitignore` — **never** commit it, especially if it contains **`CLIENT_SECRET`**
+- In **`public`** mode, Microsoft sign-in uses **Device Code** (or cached token); no app password in `.env`
+- In **`client_secret`** mode, protect the **client secret** (rotation, secret store, file permissions) — it grants the same access as the registered application to the tenant resources you have allowed
+- The HTTP server binds to `0.0.0.0` but only serves data that is already accessible to the authenticated user or the service principal; no data is stored permanently beyond the activity event cache

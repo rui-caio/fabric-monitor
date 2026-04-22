@@ -218,7 +218,7 @@
   <header>
     <div>
       <h1><span class="dot" id="dot"></span>{{ORG_NAME}} FABRIC MONITOR</h1>
-      <div class="sub" id="cap">Connecting to proxy...</div>
+      <div class="sub" id="cap">Loading…</div>
     </div>
     <div style="display:flex;align-items:center">
       <button class="theme-toggle" onclick="toggleTheme()" title="Alternar Tema">
@@ -228,9 +228,6 @@
       <div class="ts" id="ts">—</div>
     </div>
   </header>
-
-  <div class="banner info" id="pb"><span class="spin"></span><span>Checking proxy...</span></div>
-  <div class="banner" id="ab" style="display:none"></div>
 
   <!-- Tabs -->
   <div class="tabs">
@@ -879,37 +876,30 @@ async function api(ep,body={}){
 let _authRetryTimer = null;
 
 async function checkProxy(){
-  const pb=document.getElementById('pb'),ab=document.getElementById('ab');
   if(_authRetryTimer){
     clearTimeout(_authRetryTimer);
     _authRetryTimer = null;
   }
+  const capEl = document.getElementById('cap');
+  const dot = document.getElementById('dot');
   try{
     await api('/api/ping');
-    pb.className='banner ok';pb.innerHTML='✓ Proxy active';
     const s=await api('/api/auth_status');
-    ab.style.display='flex';
     if(s.authenticated){
-      ab.className='banner ok';
-      ab.innerHTML=`✓ Authenticated as <strong style="margin-left:4px">${s.account}</strong>`;
-      document.getElementById('cap').textContent='Ready — select a tab';
-      document.getElementById('dot').className='dot on';
+      capEl.textContent='Ready — select a tab';
+      dot.className='dot on';
     }else if(s.authenticating){
-      ab.className='banner info';
-      ab.innerHTML='⚙ Authentication in progress — complete login in the terminal';
-      document.getElementById('cap').textContent='Proxy active — waiting for authentication';
-      document.getElementById('dot').className='dot err';
+      capEl.textContent='Waiting for sign-in — use the server terminal';
+      dot.className='dot err';
       _authRetryTimer = setTimeout(checkProxy, 3000);
     }else{
-      ab.className='banner warn';
-      ab.innerHTML='⚠ Not authenticated — check the proxy terminal';
-      document.getElementById('cap').textContent='Proxy active — authentication required';
-      document.getElementById('dot').className='dot err';
+      capEl.textContent='Not signed in — check the server terminal';
+      dot.className='dot err';
       _authRetryTimer = setTimeout(checkProxy, 5000);
     }
   }catch(e){
-    pb.className='banner fail';
-    pb.innerHTML='✗ Proxy not detected — run <strong style="margin-left:4px">python fabric_proxy.py</strong>';
+    capEl.textContent='Server not reachable — start the monitor and refresh';
+    dot.className='dot err';
     _authRetryTimer = setTimeout(checkProxy, 5000);
   }
 }
