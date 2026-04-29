@@ -528,8 +528,8 @@
       <div class="rank-scroll" id="rrLoad"><div class="empty" style="padding:14px">—</div></div>
     </div>
     <div class="cc">
-      <div class="ct">Top by # Refreshes</div>
-      <div class="cs">Total refreshes executed</div>
+      <div class="ct">Top Refreshes / Day</div>
+      <div class="cs">Scheduled refreshes per day</div>
       <div class="rank-scroll" id="rrCount"><div class="empty" style="padding:14px">—</div></div>
     </div>
     <div class="cc">
@@ -2027,7 +2027,7 @@ function renderRefCharts(data){
 
 function renderRefRankings(data){
   const topLoad  = [...data].filter(r=>r.daily_load_min!=null).sort((a,b)=>b.daily_load_min-a.daily_load_min).slice(0,15);
-  const topCount = [...data].filter(r=>r.refresh_count>0).sort((a,b)=>b.refresh_count-a.refresh_count).slice(0,15);
+  const topCount = [...data].filter(r=>(r.refreshes_per_day||0)>0).sort((a,b)=>(b.refreshes_per_day||0)-(a.refreshes_per_day||0)).slice(0,15);
   const topFail  = [...data].filter(r=>r.refresh_failures>0).sort((a,b)=>b.refresh_failures-a.refresh_failures).slice(0,15);
   const topDur   = [...data].filter(r=>r.average_duration!=null).sort((a,b)=>b.average_duration-a.average_duration).slice(0,15);
 
@@ -2045,7 +2045,7 @@ function renderRefRankings(data){
   };
 
   renderRR('rrLoad',  topLoad,  r=>r.daily_load_min,    '#f59e0b', v=>v.toFixed(1)+'m');
-  renderRR('rrCount', topCount, r=>r.refresh_count,     '#00d4ff', v=>v+'x');
+  renderRR('rrCount', topCount, r=>r.refreshes_per_day, '#00d4ff', v=>v+'x/day');
   renderRR('rrFail',  topFail,  r=>r.refresh_failures,  '#ef4444', v=>v+'x');
   renderRR('rrDur',   topDur,   r=>r.average_duration,  '#a855f7', v=>v.toFixed(2)+'m');
 }
