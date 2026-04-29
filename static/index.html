@@ -708,6 +708,25 @@ function fmtChartAxis(d, withDay){
 function fmtAtClock(){
   return fmtChartAxis(new Date(), false);
 }
+function linkItem(name, workspaceId, itemId, type) {
+  if (!name || name === '—') return name;
+  const safeName = String(name).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  if (!workspaceId) return safeName;
+  const baseUrl = `https://app.powerbi.com/groups/${workspaceId}`;
+  if (!itemId) return `<a href="${baseUrl}" target="_blank" style="color:inherit;text-decoration:underline;cursor:pointer" title="Open Workspace">${safeName}</a>`;
+  
+  let path = '';
+  const t = (type || '').toLowerCase();
+  if (t.includes('report')) path = `/reports/${itemId}`;
+  else if (t.includes('dataset')) return `<a href="https://app.powerbi.com/onelake/details/${workspaceId}/dataset/${itemId}/" target="_blank" style="color:inherit;text-decoration:underline;cursor:pointer" title="Open Item">${safeName}</a>`;
+  else if (t.includes('dashboard')) path = `/dashboards/${itemId}`;
+  else if (t.includes('dataflow')) path = `/dataflows/${itemId}`;
+  
+  if (path) {
+    return `<a href="${baseUrl}${path}" target="_blank" style="color:inherit;text-decoration:underline;cursor:pointer" title="Open Item">${safeName}</a>`;
+  }
+  return safeName;
+}
 const P = window.location.origin;
 let timeChart,methodChart,artifactChart,operationChart,hourChart;
 let cuChart,invTypeChart;
@@ -1515,13 +1534,25 @@ function renderTable(ev){
       const met =e.ConsumptionMethod||(e.UserAgent?.includes('MSOLAP')?'Desktop':e.UserAgent?.includes('AzureClient')?'Azure Client':'—');
       const ip  =e.ClientIP||'—';
       const ok  =e.IsSuccess!==false;
+
+      const wsId = e.WorkspaceId || e.WorkSpaceId;
+      const itemId = e.ReportId || e.DatasetId || e.DashboardId || e.DataflowId || e.ArtifactId || e.ObjectId;
+      let itemType = '';
+      if(e.ReportId || op.includes('Report')) itemType = 'report';
+      else if(e.DatasetId || op.includes('Dataset')) itemType = 'dataset';
+      else if(e.DashboardId || op.includes('Dashboard')) itemType = 'dashboard';
+      else if(e.DataflowId || op.includes('Dataflow')) itemType = 'dataflow';
+
+      const wsLink = linkItem(ws, wsId, null, null);
+      const itemLink = linkItem(item, wsId, itemId, itemType);
+
       return `<tr>
         <td style="font-size:10px">${ts}</td>
         <td>${opBadge(op)}</td>
         <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${user}</td>
         <td style="font-size:10px;color:var(--dim)">${e.domain||'—'}</td>
-        <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${item}">${item}</td>
-        <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${ws}</td>
+        <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${item}">${itemLink}</td>
+        <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${wsLink}</td>
         <td style="font-size:10px;color:var(--dim)">${met}</td>
         <td style="font-size:10px;color:var(--dim)">${ip}</td>
         <td>${ok?'<span style="color:var(--success)">✓</span>':'<span style="color:var(--danger)">✗ Failed</span>'}</td>
@@ -1721,6 +1752,9 @@ function groupRows(rows, dims) {
       entry.throttling  = 0;
       entry.pct_capacity = 0;
       entry._count      = 0;
+      entry.workspace_id = r.workspace_id;
+      entry.item_id = r.item_id;
+      entry.item_kind = r.item_kind;
       map.set(key, entry);
     }
     const e = map.get(key);
@@ -1815,7 +1849,12 @@ function renderDrillTable(rows, mode) {
       </tr></thead>
       <tbody>
         ${grouped.map(r => `<tr>
-          ${dims.map(d => `<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;${d==='operation'?'color:var(--cu)':d==='user'||d==='workspace'?'color:var(--dim)':''}" title="${r[d]}">${r[d]}</td>`).join('')}
+          ${dims.map(d => {
+            let val = r[d];
+            if (d === 'workspace') val = linkItem(val, r.workspace_id, null, null);
+            else if (d === 'item') val = linkItem(val, r.workspace_id, r.item_id, r.item_kind);
+            return `<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;${d==='operation'?'color:var(--cu)':d==='user'||d==='workspace'?'color:var(--dim)':''}" title="${String(r[d]||'').replace(/"/g, '&quot;')}">${val}</td>`;
+          }).join('')}
           <td>${cuBar(r.total_cu)}</td>
           <td style="font-size:10px;color:var(--dim)">${r.timepoint_cu.toFixed(2)}s</td>
           <td style="font-size:10px;color:var(--dim)">${r.duration.toFixed(1)}s</td>
@@ -2058,8 +2097,8 @@ function renderRefTable(data){
     </tr></thead>
     <tbody>${sorted.slice(0,500).map(r=>`<tr>
       <td style="font-size:10px;color:var(--dim)">${r.domain||'—'}</td>
-      <td style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)" title="${r.workspace}">${r.workspace||'—'}</td>
-      <td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cu)" title="${r.name}">${r.name}</td>
+      <td style="font-size:10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)" title="${r.workspace}">${linkItem(r.workspace||'—', r.workspace_id, null, null)}</td>
+      <td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--cu)" title="${r.name}">${linkItem(r.name, r.workspace_id, r.id, 'dataset')}</td>
       <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${r.configured_by||'—'}</td>
       <td>${schedBadge(r)}</td>
       <td style="font-size:10px;text-align:center">${r.refreshes_per_day||'—'}</td>
@@ -2270,9 +2309,9 @@ function renderInvTable(data){
     </tr></thead>
     <tbody>${data.slice(0,2000).map(r=>`<tr>
       <td><span class="badge b-view">${invEscape(r.type||'')}</span></td>
-      <td style="font-size:10px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.name)}">${invEscape(r.name||'')}</td>
+      <td style="font-size:10px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.name)}">${linkItem(r.name||'', r.workspaceId, r.itemId, r.type)}</td>
       <td style="font-size:10px;color:var(--dim)">${invEscape(r.domain||'—')}</td>
-      <td style="font-size:10px;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.workspaceName)}">${invEscape(r.workspaceName||'')}</td>
+      <td style="font-size:10px;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.workspaceName)}">${linkItem(r.workspaceName||'', r.workspaceId, null, null)}</td>
       <td style="font-size:9px;color:var(--dim)">${invEscape(r.itemId||'')}</td>
     </tr>`).join('')}</tbody>
   </table>

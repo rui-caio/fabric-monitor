@@ -38,6 +38,7 @@ def handle_refreshes(payload):
                 "id":               r.get("id",""),
                 "name":             r.get("name",""),
                 "workspace":        ws_name,
+                "workspace_id":     ws_id,
                 "domain":           get_domain_for_workspace(workspace_id=ws_id, workspace_name=ws_name),
                 "kind":             r.get("kind",""),
                 "refresh_count":    r.get("refreshCount") or 0,
