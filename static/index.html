@@ -342,6 +342,7 @@
       <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-fWs"></div></div>
       <div class="fg"><label>Item</label><div class="ms-wrap" id="ms-fItem"></div></div>
       <div class="fg"><label>User</label><div class="ms-wrap" id="ms-fUser"></div></div>
+      <div class="fg"><label>External App</label><div class="ms-wrap" id="ms-fApp"></div></div>
       <div class="fg">
         <label>Status</label>
         <select id="fStatus" onchange="applyFilters()">
@@ -1168,12 +1169,13 @@ function getActivityFilters(){
   const ws=[...(_msState['fWs']||new Set())];
   const item=[...(_msState['fItem']||new Set())];
   const user=[...(_msState['fUser']||new Set())];
+  const app=[...(_msState['fApp']||new Set())];
   const status=document.getElementById('fStatus').value;
-  return {type,dom,ws,item,user,status};
+  return {type,dom,ws,item,user,app,status};
 }
 
 function hasActiveActivityFilters(filters){
-  return filters.type.length||filters.dom.length||filters.ws.length||filters.item.length||filters.user.length||filters.status;
+  return filters.type.length||filters.dom.length||filters.ws.length||filters.item.length||filters.user.length||filters.app.length||filters.status;
 }
 
 function shouldUseServerChartAggregates(){
@@ -1246,11 +1248,13 @@ function populateFilters(){
   const wss = _activityFilterOptions?.ws || [...new Set(_allEvents.map(e=>e.WorkSpaceName||e.WorkspaceName||'').filter(Boolean))].sort();
   const items = _activityFilterOptions?.item || [...new Set(_allEvents.map(activityItemLabel).filter(Boolean))].sort();
   const users = _activityFilterOptions?.user || [...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
+  const apps = _activityFilterOptions?.app || [...new Set(_allEvents.map(e=>e.AppName||e.UserAgent||'').filter(Boolean))].sort();
   buildMultiSelect('ms-fType',ops);
   buildMultiSelect('ms-fDomain',doms);
   buildMultiSelect('ms-fWs',wss);
   buildMultiSelect('ms-fItem',items);
   buildMultiSelect('ms-fUser',users);
+  buildMultiSelect('ms-fApp',apps);
 }
 
 function applyFilters(){
@@ -1277,6 +1281,7 @@ function applyFilters(){
   const selWs=new Set(filters.ws);
   const selItem=new Set(filters.item);
   const selUser=new Set(filters.user);
+  const selApp=new Set(filters.app);
   const fStatus=filters.status;
   const filtered=_allEvents.filter(e=>{
     const op  =e.Activity||e.OperationName||'';
@@ -1284,12 +1289,14 @@ function applyFilters(){
     const ws  =e.WorkSpaceName||e.WorkspaceName||'';
     const it  =activityItemLabel(e);
     const user=e.UserId||e.UserName||'';
+    const app =e.AppName||e.UserAgent||'';
     const ok  =e.IsSuccess!==false;
     if(selType.size>0&&!selType.has(op))  return false;
     if(selDom.size>0 &&!selDom.has(dom)) return false;
     if(selWs.size>0  &&!selWs.has(ws))   return false;
     if(selItem.size>0&&!selItem.has(it)) return false;
     if(selUser.size>0&&!selUser.has(user))return false;
+    if(selApp.size>0 &&!selApp.has(app)) return false;
     if(fStatus==='ok'  &&!ok) return false;
     if(fStatus==='fail'&& ok) return false;
     return true;
@@ -1300,7 +1307,7 @@ function applyFilters(){
 }
 
 function clearFilters(){
-  ['fType','fDomain','fWs','fItem','fUser'].forEach(id=>clearMs(id));
+  ['fType','fDomain','fWs','fItem','fUser','fApp'].forEach(id=>clearMs(id));
   document.getElementById('fStatus').value='';
   applyFilters();
 }

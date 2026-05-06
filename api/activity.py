@@ -337,6 +337,7 @@ def handle_activity(payload):
         ws = event.get('WorkSpaceName') or event.get('WorkspaceName') or ''
         user = event.get('UserId') or event.get('UserName') or ''
         dom = event.get('domain') or ''
+        app = event.get('AppName') or event.get('UserAgent') or ''
         status = flt.get('status', '')
         if flt.get('type'):
             if op not in flt['type']:
@@ -352,6 +353,9 @@ def handle_activity(payload):
                 return False
         if flt.get('user'):
             if user not in flt['user']:
+                return False
+        if flt.get('app'):
+            if app not in flt['app']:
                 return False
         if status == 'ok' and event.get('IsSuccess') is False:
             return False
@@ -404,6 +408,9 @@ def handle_activity(payload):
         }),
         "user": sorted({
             e.get('UserId') or e.get('UserName') or '' for e in all_events if e.get('UserId') or e.get('UserName')
+        }),
+        "app": sorted({
+            e.get('AppName') or e.get('UserAgent') or '' for e in all_events if e.get('AppName') or e.get('UserAgent')
         }),
         "item": sorted({
             _item_from_event(e) for e in all_events if _item_from_event(e)
