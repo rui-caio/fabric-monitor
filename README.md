@@ -1,6 +1,10 @@
 # Fabric Monitor
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?logo=github&logoColor=white)](https://github.com/rui-caio/fabric-monitor)
+
 A local monitoring dashboard for **Microsoft Fabric** capacities — tracks compute unit consumption, user activity, and dataset refresh metrics in real time through a browser-based interface.
+
+> 💡 **Note:** This tool runs entirely locally and its execution does not consume any compute units (CUs) from your Fabric capacity.
 
 ---
 
@@ -78,7 +82,7 @@ Microsoft documents **strict rate limits** on Admin list APIs (for example, low 
 ### System
 
 | Requirement | Minimum version |
-|-------------|----------------|
+| ----------- | --------------- |
 | Python | 3.8+ |
 | pip | any recent version |
 
@@ -117,10 +121,12 @@ Chart.js is loaded automatically via CDN — internet access is required on firs
 
 The capacity utilisation data is read through the official **Microsoft Fabric Capacity Metrics** app (**version 65**), which must be installed in your tenant.
 
+> 💡 **Important:** It is highly recommended to install the Capacity Metrics app in a **Pro** workspace rather than a Premium/Fabric workspace. This ensures that the queries made by this dashboard to read the metrics do not consume CUs from the capacity you are monitoring.
+
 You need two IDs from that app's dataset:
 
 | Variable | What it is |
-|----------|-----------|
+| -------- | ---------- |
 | `METRICS_WS` | ID of the workspace where the Capacity Metrics app is installed |
 | `METRICS_DS` | ID of the Capacity Metrics app's dataset |
 
@@ -188,7 +194,7 @@ DISPLAY_TIMEZONE=Europe/Lisbon
 The app supports two authentication modes, controlled with **`AUTH_TYPE`** in `.env` (default: **`public`**).
 
 | Mode | When to use | Main `.env` fields |
-|------|-------------|-------------------|
+| ---- | ----------- | ------------------ |
 | **`public`** | Interactive sign-in (typical for a user who is a Power BI / Fabric admin). | `TENANT_ID` and the capacity/metrics variables. `CLIENT_ID` is optional: if unset, the built-in Power BI public client is used for **Device Code** sign-in. |
 | **`client_secret`** | Unattended / server runs using a **service principal** (app registration with a client secret). | **`TENANT_ID`**, **`CLIENT_ID`**, **`CLIENT_SECRET`**, plus the same capacity and metrics variables. |
 
@@ -291,7 +297,7 @@ fabric-monitor/
 The server exposes the following endpoints at `http://localhost:8765`:
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
+| ------ | -------- | ----------- |
 | `GET` | `/` | Serves the frontend HTML |
 | `POST` | `/api/ping` | Health check |
 | `POST` | `/api/auth_status` | Current authentication state and account |
@@ -306,7 +312,7 @@ The server exposes the following endpoints at `http://localhost:8765`:
 ## Microsoft APIs used
 
 | API | Purpose |
-|-----|---------|
+| --- | ------- |
 | [Power BI Activity Events API](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/get-activity-events) | User activity log |
 | [Power BI Capacity Refreshables API](https://learn.microsoft.com/rest/api/power-bi/capacities/get-refreshables-for-capacity) | Dataset refresh metrics and schedules |
 | [Power BI Execute Queries API](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/execute-queries-in-group) | DAX queries against the Capacity Metrics dataset |
@@ -322,7 +328,7 @@ Optional: [Microsoft Fabric REST — List Items](https://learn.microsoft.com/en-
 ## Environment variables
 
 | Variable | Required | Description |
-|----------|----------|-------------|
+| -------- | -------- | ----------- |
 | `TENANT_ID` | Yes | Azure AD tenant ID |
 | `CAPACITY_ID` | Yes | ID of the Fabric capacity to monitor |
 | `METRICS_WS` | Yes | Workspace ID of the Capacity Metrics app |
@@ -340,29 +346,37 @@ Optional: [Microsoft Fabric REST — List Items](https://learn.microsoft.com/en-
 ## Troubleshooting
 
 ### `ERROR: missing configuration variables`
+
 The `.env` file is missing or incomplete. Make sure you copied `.env.example` and filled in all required values.
 
 ### `ERROR: 'msal' library not found`
+
 ```bash
 pip install msal
 ```
 
 ### Authentication fails or expires
+
 The MSAL token is held in memory only. Restarting the server will prompt for authentication again. If the account lacks sufficient permissions, the device code flow completes but API calls return 403.
 
 ### `Activity API error 403`
+
 The authenticated account does not have **Power BI Administrator** or **Fabric Administrator** role. Contact your tenant administrator.
 
 ### `Capacity API error 404` or empty data
+
 Verify that `METRICS_WS` and `METRICS_DS` match the workspace and dataset of the **Microsoft Fabric Capacity Metrics** app (**version 65**) in your tenant. If you use **`client_secret`**, the **service principal** must be added to that **same workspace** (see *Authentication* above) — a 404 on `PowerBIFolderNotFound` often means the app identity has no access to the workspace, not a wrong id for your own user.
 
 ### Dashboard shows the server is not reachable
+
 The Python server is not running or is using a different port. Confirm that `python fabric_proxy.py` is active in the terminal and that the `PORT` value in `.env` matches the URL you are accessing.
 
 ### Inventory: HTTP 429 or "Retry in … seconds"
+
 Power BI **Admin** list APIs enforce per-tenant throttling. The app uses **bulk** `/admin/reports` (and datasets, dashboards, dataflows) with pagination instead of per-workspace calls to minimise requests. If the tenant is very large, wait for the retry window or run the inventory again later.
 
 ### Inventory: empty or incomplete without Admin rights
+
 Listing workspaces by `capacityId` requires **GetGroupsAsAdmin** (or the non-admin fallback with visible `capacityId` on `GET /groups`). Enumerating artefacts requires **GetReportsAsAdmin** and related Admin endpoints, or **Fabric List Items** with a valid Fabric token.
 
 ---
@@ -370,7 +384,7 @@ Listing workspaces by `capacityId` requires **GetGroupsAsAdmin** (or the non-adm
 ## Dependencies
 
 | Dependency | Version | Source |
-|------------|---------|--------|
+| ---------- | ------- | ------ |
 | `msal` | any | `pip install msal` |
 | `Chart.js` | 4.4.1 | CDN (loaded automatically) |
 | `JetBrains Mono` | — | Google Fonts (loaded automatically) |
