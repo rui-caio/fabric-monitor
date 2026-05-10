@@ -3,14 +3,14 @@
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?logo=github&logoColor=white)](https://github.com/rui-caio/fabric-monitor)
 
 <p align="center">
-  <img src="./docs/screenshot1.png" width="45%" alt="Coloque a primeira imagem na pasta docs com o nome screenshot1.png" />
+  <img src="./docs/screenshot1.png" height="350" alt="Coloque a primeira imagem na pasta docs com o nome screenshot1.png" />
   &nbsp;
-  <img src="./docs/screenshot2.png" width="45%" alt="Coloque a segunda imagem na pasta docs com o nome screenshot2.png" />
+  <img src="./docs/screenshot2.png" height="350" alt="Coloque a segunda imagem na pasta docs com o nome screenshot2.png" />
   <br/>
   <br/>
-  <img src="./docs/screenshot3.png" width="45%" alt="Coloque a terceira imagem na pasta docs com o nome screenshot3.png" />
+  <img src="./docs/screenshot3.png" height="350" alt="Coloque a terceira imagem na pasta docs com o nome screenshot3.png" />
   &nbsp;
-  <img src="./docs/screenshot4.png" width="45%" alt="Coloque a quarta imagem na pasta docs com o nome screenshot4.png" />
+  <img src="./docs/screenshot4.png" height="350" alt="Coloque a quarta imagem na pasta docs com o nome screenshot4.png" />
 </p>
 
 A local monitoring dashboard for **Microsoft Fabric** capacities — tracks compute unit consumption, user activity, and dataset refresh metrics in real time through a browser-based interface.
