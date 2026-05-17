@@ -656,6 +656,19 @@
   </div>
 </div>
 
+<!-- Event JSON Modal -->
+<div class="drill-overlay" id="eventJsonOverlay" onclick="if(event.target===this) this.classList.remove('open')">
+  <div class="drill-panel" style="max-width:800px; max-height:80vh; margin:auto; border-radius:8px; display:flex; flex-direction:column; overflow:hidden;" onclick="event.stopPropagation()">
+    <div class="drill-header" style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+      <div class="drill-title">Operation Details (JSON)</div>
+      <button class="drill-close" onclick="document.getElementById('eventJsonOverlay').classList.remove('open')" title="Close">✕</button>
+    </div>
+    <div class="drill-body" style="padding:0; overflow-y:auto; background:var(--surface2);flex:1;">
+      <pre id="eventJsonContent" style="margin:0; padding:16px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text); white-space:pre-wrap; word-break:break-all;"></pre>
+    </div>
+  </div>
+</div>
+
 </div><!-- /wrap -->
 
 <script>
@@ -1520,6 +1533,7 @@ function renderTable(ev){
   });
   const sa=col=>col===_sortCol?(_sortAsc?' ↑':' ↓'):'';
   _currentActivityRows = ev;
+  window._currentSortedActivityRows = sorted;
   tbl.innerHTML=`<table>
     <thead><tr>
       <th onclick="sortBy('CreationTime')">Time${sa('CreationTime')}</th>
@@ -1532,7 +1546,7 @@ function renderTable(ev){
       <th onclick="sortBy('ClientIP')">IP${sa('ClientIP')}</th>
       <th onclick="sortBy('IsSuccess')">Status${sa('IsSuccess')}</th>
     </tr></thead>
-    <tbody>${sorted.slice(0,500).map(e=>{
+    <tbody>${sorted.slice(0,500).map((e, idx)=>{
       const ts  =e.CreationTime?fmtDateTime(e.CreationTime):'—';
       const op  =e.Activity||e.OperationName||'—';
       const user=e.UserId||e.UserName||'—';
@@ -1555,7 +1569,7 @@ function renderTable(ev){
 
       return `<tr>
         <td style="font-size:10px">${ts}</td>
-        <td>${opBadge(op)}</td>
+        <td style="cursor:pointer;" onclick="showEventJson(${idx})" title="Click to view JSON">${opBadge(op)}</td>
         <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${user}</td>
         <td style="font-size:10px;color:var(--dim)">${e.domain||'—'}</td>
         <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${item}">${itemLink}</td>
@@ -1574,6 +1588,13 @@ function sortBy(col){
   applyFilters();
 }
 
+function showEventJson(idx){
+  if(!window._currentSortedActivityRows) return;
+  const ev = window._currentSortedActivityRows[idx];
+  if(!ev) return;
+  document.getElementById('eventJsonContent').textContent = JSON.stringify(ev, null, 2);
+  document.getElementById('eventJsonOverlay').classList.add('open');
+}
 
 // ── Drill-down ────────────────────────────────────────────────────────
 let _drillTp   = null;
