@@ -16,6 +16,36 @@ _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CACHE_DIR = os.path.join(_BASE_DIR, '.cache', 'activityevents')
 os.makedirs(_CACHE_DIR, exist_ok=True)
 
+import time
+_LAST_CLEANUP_TIME = 0
+
+def _cleanup_old_cache(days_to_keep=32):
+    global _LAST_CLEANUP_TIME
+    now = time.time()
+    # Run cleanup at most once per hour to avoid disk overhead
+    if now - _LAST_CLEANUP_TIME < 3600:
+        return
+    _LAST_CLEANUP_TIME = now
+    
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
+    try:
+        for f in os.listdir(_CACHE_DIR):
+            if not f.startswith('activity-') or not f.endswith('.json'):
+                continue
+            # Extract end date part: activity-YYYYMMDDTHHMMSSZ_YYYYMMDDTHHMMSSZ.json
+            parts = f.replace('.json', '').split('_')
+            if len(parts) == 2:
+                try:
+                    end_str = parts[1].replace('Z', '+0000')
+                    end_dt = datetime.strptime(end_str, '%Y%m%dT%H%M%S%z')
+                    if end_dt < cutoff_dt:
+                        os.remove(os.path.join(_CACHE_DIR, f))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"Error during cache cleanup: {e}")
+
+
 
 def _cache_path(start_dt, end_dt):
     return os.path.join(
@@ -85,6 +115,47 @@ def _event_in_requested_range(e, req_start, req_end):
 
 def _activity_op(e):
     return e.get('Activity') or e.get('OperationName') or ''
+
+def _is_success(e):
+    if e.get('IsSuccess') is False: return False
+    if str(e.get('ResultStatus', '')).lower() == 'failed': return False
+    if str(e.get('ItemState', '')).lower() == 'failed': return False
+    if str(e.get('Status', '')).lower() == 'failed': return False
+    return True
+
+def _clean_app_name(e):
+    name = str(e.get('AppName') or e.get('UserAgent') or '')
+    if not name: return ''
+    if name.startswith('Power BI Desktop') or name == 'PBIDesktop.exe': return 'Power BI Desktop'
+    if name.startswith('Power%20BI/') or name.startswith('Power BI/'): return 'Power BI App (Apple)'
+    if name.startswith('DAX Studio'): return 'DAX Studio'
+    if name.startswith('Tabular Editor') or name.startswith('TabularEditor-'): return 'Tabular Editor'
+    if name.startswith('Bravo-'): return 'Bravo'
+    if name.startswith('OneOutlook') or name.startswith('Win32_Outlook') or name.startswith('WAC_Outlook') or name.startswith('Outlook-'): return 'Outlook'
+    if name.startswith('Microsoft Fabric Capacity Metrics'): return 'Microsoft Fabric Capacity Metrics'
+    if name.startswith('Microsoft 365 Usage Analytics'): return 'Microsoft 365 Usage Analytics'
+    if 'TeamsMobile-iOS' in name: return 'Teams Mobile (iOS)'
+    if 'TeamsMobile-Android' in name: return 'Teams Mobile (Android)'
+    if '[PBIMobile' in name or name.startswith('PBIMobile/'): return 'Power BI Mobile App'
+    if 'SharePoint for Android' in name: return 'SharePoint Mobile App'
+    if name.startswith('Mozilla/'):
+        if 'Edg/' in name or 'EdgA/' in name or 'EdgiOS/' in name: return 'Edge Browser'
+        if 'Chrome/' in name or 'CriOS/' in name: return 'Chrome Browser'
+        if 'Firefox/' in name or 'FxiOS/' in name: return 'Firefox Browser'
+        if 'Safari/' in name and 'Chrome' not in name: return 'Safari Browser'
+        return 'Web Browser'
+    if 'MicrosoftPowerBIMgmt' in name: return 'Power BI PowerShell Mgmt'
+    if name.startswith('OneLakeClient'): return 'OneLake Client'
+    if name.startswith('FxVersion/'): return 'Power BI .NET Client'
+    if name.startswith('azure-logic-apps') or 'microsoft-flow' in name: return 'Power Automate / Logic Apps'
+    if name.startswith('MSOLAP') or name == 'Excel' or name == 'EXCEL.EXE': return 'Excel / MSOLAP'
+    if name.startswith('Microsoft SQL Server Management Studio'): return 'SQL Server Management Studio'
+    if name.startswith('azsdk-python') or name.startswith('python-') or name.startswith('Python-'): return 'Python Script'
+    if name.startswith('azsdk-net'): return '.NET Azure SDK'
+    if name.startswith('okhttp'): return 'Java App (OkHttp)'
+    if name.startswith('node-fetch'): return 'Node.js Script'
+    if name.startswith('object_store/'): return 'Object Store Client'
+    return name
 
 
 def _display_hour_from_utc_dt(dt_utc):
@@ -222,7 +293,7 @@ def _compute_chart_aggregates(events, max_buckets=48):
     op_labels = [x[0] for x in op_sorted]
     op_vals = [x[1] for x in op_sorted]
 
-    failed = [e for e in events if e.get('IsSuccess') is False]
+    failed = [e for e in events if not _is_success(e)]
     ext_only = [e for e in events if _activity_op(e) == 'ConnectFromExternalApplication']
 
     return {
@@ -257,7 +328,7 @@ def _compute_chart_aggregates(events, max_buckets=48):
             'fails': _top_n_pairs(failed, lambda e: _activity_op(e) or '', 10),
             'external': _top_n_pairs(
                 ext_only,
-                lambda e: e.get('AppName') or e.get('UserAgent') or 'Unknown app',
+                lambda e: _clean_app_name(e) or 'Unknown app',
                 10,
             ),
         },
@@ -265,6 +336,7 @@ def _compute_chart_aggregates(events, max_buckets=48):
 
 
 def handle_activity(payload):
+    _cleanup_old_cache()
     token = get_token()
 
     start_str = payload.get("start")
@@ -337,7 +409,7 @@ def handle_activity(payload):
         ws = event.get('WorkSpaceName') or event.get('WorkspaceName') or ''
         user = event.get('UserId') or event.get('UserName') or ''
         dom = event.get('domain') or ''
-        app = event.get('AppName') or event.get('UserAgent') or ''
+        app = _clean_app_name(event)
         status = flt.get('status', '')
         if flt.get('type'):
             if op not in flt['type']:
@@ -357,9 +429,9 @@ def handle_activity(payload):
         if flt.get('app'):
             if app not in flt['app']:
                 return False
-        if status == 'ok' and event.get('IsSuccess') is False:
+        if status == 'ok' and not _is_success(event):
             return False
-        if status == 'fail' and event.get('IsSuccess') is not False:
+        if status == 'fail' and _is_success(event):
             return False
         return True
 
@@ -410,7 +482,7 @@ def handle_activity(payload):
             e.get('UserId') or e.get('UserName') or '' for e in all_events if e.get('UserId') or e.get('UserName')
         }),
         "app": sorted({
-            e.get('AppName') or e.get('UserAgent') or '' for e in all_events if e.get('AppName') or e.get('UserAgent')
+            _clean_app_name(e) for e in all_events if _clean_app_name(e)
         }),
         "item": sorted({
             _item_from_event(e) for e in all_events if _item_from_event(e)
@@ -428,7 +500,7 @@ def handle_activity(payload):
         "viewReportCount": sum(1 for e in all_events if (e.get('Activity') or e.get('OperationName')) == 'ViewReport'),
         "refreshCount": sum(1 for e in all_events if (e.get('Activity') or e.get('OperationName')) == 'RefreshDataset'),
         "externalCount": sum(1 for e in all_events if (e.get('Activity') or e.get('OperationName')) == 'ConnectFromExternalApplication'),
-        "failureCount": sum(1 for e in all_events if e.get('IsSuccess') is False),
+        "failureCount": sum(1 for e in all_events if not _is_success(e)),
     }
 
     chart_aggregates = _compute_chart_aggregates(all_events)

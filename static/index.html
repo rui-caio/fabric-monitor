@@ -625,6 +625,10 @@
         <div class="drill-ref" id="drillChartRef" style="display:none;font-size:10px;color:var(--dim);margin-top:4px;line-height:1.35"></div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:4px;margin-right:8px;">
+          <button class="btn btn-s" id="btnPrevTp" onclick="navigateDrillTp(-1)" title="Previous Timepoint">◄ Prev</button>
+          <button class="btn btn-s" id="btnNextTp" onclick="navigateDrillTp(1)" title="Next Timepoint">Next ►</button>
+        </div>
         <button class="btn btn-s" onclick="closeDrillPanel()">← Back to chart</button>
         <button class="btn btn-s" onclick="exportDrillToExcel()">📄 Excel</button>
         <button class="drill-close" onclick="closeDrillPanel()" title="Close">✕</button>
@@ -1255,13 +1259,57 @@ document.addEventListener('click',()=>{
   });
 });
 
+function getCleanAppName(e) {
+  const name = String(e.AppName || e.UserAgent || '');
+  if (!name) return '';
+  if (name.startsWith('Power BI Desktop') || name === 'PBIDesktop.exe') return 'Power BI Desktop';
+  if (name.startsWith('Power%20BI/') || name.startsWith('Power BI/')) return 'Power BI App (Apple)';
+  if (name.startsWith('DAX Studio')) return 'DAX Studio';
+  if (name.startsWith('Tabular Editor') || name.startsWith('TabularEditor-')) return 'Tabular Editor';
+  if (name.startsWith('Bravo-')) return 'Bravo';
+  if (name.startsWith('OneOutlook') || name.startsWith('Win32_Outlook') || name.startsWith('WAC_Outlook') || name.startsWith('Outlook-')) return 'Outlook';
+  if (name.startsWith('Microsoft Fabric Capacity Metrics')) return 'Microsoft Fabric Capacity Metrics';
+  if (name.startsWith('Microsoft 365 Usage Analytics')) return 'Microsoft 365 Usage Analytics';
+  if (name.includes('TeamsMobile-iOS')) return 'Teams Mobile (iOS)';
+  if (name.includes('TeamsMobile-Android')) return 'Teams Mobile (Android)';
+  if (name.includes('[PBIMobile') || name.startsWith('PBIMobile/')) return 'Power BI Mobile App';
+  if (name.includes('SharePoint for Android')) return 'SharePoint Mobile App';
+  if (name.startsWith('Mozilla/')) {
+    if (name.includes('Edg/') || name.includes('EdgA/') || name.includes('EdgiOS/')) return 'Edge Browser';
+    if (name.includes('Chrome/') || name.includes('CriOS/')) return 'Chrome Browser';
+    if (name.includes('Firefox/') || name.includes('FxiOS/')) return 'Firefox Browser';
+    if (name.includes('Safari/') && !name.includes('Chrome')) return 'Safari Browser';
+    return 'Web Browser';
+  }
+  if (name.includes('MicrosoftPowerBIMgmt')) return 'Power BI PowerShell Mgmt';
+  if (name.startsWith('OneLakeClient')) return 'OneLake Client';
+  if (name.startsWith('FxVersion/')) return 'Power BI .NET Client';
+  if (name.startsWith('azure-logic-apps') || name.includes('microsoft-flow')) return 'Power Automate / Logic Apps';
+  if (name.startsWith('MSOLAP') || name === 'Excel' || name === 'EXCEL.EXE') return 'Excel / MSOLAP';
+  if (name.startsWith('Microsoft SQL Server Management Studio')) return 'SQL Server Management Studio';
+  if (name.startsWith('azsdk-python') || name.startsWith('python-') || name.startsWith('Python-')) return 'Python Script';
+  if (name.startsWith('azsdk-net')) return '.NET Azure SDK';
+  if (name.startsWith('okhttp')) return 'Java App (OkHttp)';
+  if (name.startsWith('node-fetch')) return 'Node.js Script';
+  if (name.startsWith('object_store/')) return 'Object Store Client';
+  return name;
+}
+
+function isSuccess(e) {
+  if (e.IsSuccess === false) return false;
+  if (String(e.ResultStatus || '').toLowerCase() === 'failed') return false;
+  if (String(e.ItemState || '').toLowerCase() === 'failed') return false;
+  if (String(e.Status || '').toLowerCase() === 'failed') return false;
+  return true;
+}
+
 function populateFilters(){
   const ops = _activityFilterOptions?.type || [...new Set(_allEvents.map(e=>e.Activity||e.OperationName||'').filter(Boolean))].sort();
   const doms = _activityFilterOptions?.domain || [...new Set(_allEvents.map(e=>e.domain||'').filter(Boolean))].sort();
   const wss = _activityFilterOptions?.ws || [...new Set(_allEvents.map(e=>e.WorkSpaceName||e.WorkspaceName||'').filter(Boolean))].sort();
   const items = _activityFilterOptions?.item || [...new Set(_allEvents.map(activityItemLabel).filter(Boolean))].sort();
   const users = _activityFilterOptions?.user || [...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
-  const apps = _activityFilterOptions?.app || [...new Set(_allEvents.map(e=>e.AppName||e.UserAgent||'').filter(Boolean))].sort();
+  const apps = _activityFilterOptions?.app || [...new Set(_allEvents.map(getCleanAppName).filter(Boolean))].sort();
   buildMultiSelect('ms-fType',ops);
   buildMultiSelect('ms-fDomain',doms);
   buildMultiSelect('ms-fWs',wss);
@@ -1302,8 +1350,8 @@ function applyFilters(){
     const ws  =e.WorkSpaceName||e.WorkspaceName||'';
     const it  =activityItemLabel(e);
     const user=e.UserId||e.UserName||'';
-    const app =e.AppName||e.UserAgent||'';
-    const ok  =e.IsSuccess!==false;
+    const app =getCleanAppName(e);
+    const ok  =isSuccess(e);
     if(selType.size>0&&!selType.has(op))  return false;
     if(selDom.size>0 &&!selDom.has(dom)) return false;
     if(selWs.size>0  &&!selWs.has(ws))   return false;
@@ -1326,7 +1374,8 @@ function clearFilters(){
 }
 
 function renderKPIs(ev){
-  if(_activitySummary){
+  const hasLocalFilters = hasActiveActivityFilters(getActivityFilters());
+  if(_activitySummary && !hasLocalFilters){
     document.getElementById('k1').textContent=_activitySummary.totalEvents.toLocaleString();
     document.getElementById('k2').textContent=_activitySummary.uniqueUsers.toLocaleString();
     document.getElementById('k3').textContent=_activitySummary.viewReportCount.toLocaleString();
@@ -1342,7 +1391,7 @@ function renderKPIs(ev){
   document.getElementById('k3').textContent=ev.filter(e=>e.Activity==='ViewReport').length.toLocaleString();
   document.getElementById('k4').textContent=ev.filter(e=>e.Activity==='RefreshDataset').length.toLocaleString();
   document.getElementById('k5').textContent=ev.filter(e=>e.Activity==='ConnectFromExternalApplication').length.toLocaleString();
-  document.getElementById('k6').textContent=ev.filter(e=>e.IsSuccess===false).length.toLocaleString();
+  document.getElementById('k6').textContent=ev.filter(e=>!isSuccess(e)).length.toLocaleString();
   document.getElementById('tcount').textContent=ev.length+' events';
 }
 
@@ -1420,7 +1469,7 @@ function renderMethodChart(ev){
   const counts={};
   ev.forEach(e=>{
     let m=e.ConsumptionMethod||'';
-    if(!m){const ua=e.UserAgent||'';
+    if(!m){const ua=String(e.UserAgent||'');
       if(ua.includes('MSOLAP'))     m='Power BI Desktop';
       else if(ua.includes('Excel')) m='Excel';
       else if(ua.includes('Azure')) m='Azure Client';
@@ -1506,12 +1555,12 @@ function renderRankings(ev){
   renderRankList('rankDatasets',topN(ev,e=>e.DatasetName||''),'#ff6b35');
   renderRankList('rankUsers',   topN(ev,e=>e.UserId||e.UserName||''),'#00ff9f');
   renderRankList('rankWs',      topN(ev,e=>e.WorkSpaceName||e.WorkspaceName||''),'#a855f7');
-  renderRankList('rankFails',   topN(ev.filter(e=>e.IsSuccess===false),e=>e.Activity||e.OperationName||'',10),'#ef4444');
-  renderRankList('rankExternal',topN(ev.filter(e=>(e.Activity||e.OperationName)==='ConnectFromExternalApplication'),e=>e.AppName||e.UserAgent||'Unknown app',10),'#00ff9f');
+  renderRankList('rankFails',   topN(ev.filter(e=>!isSuccess(e)),e=>e.Activity||e.OperationName||'',10),'#ef4444');
+  renderRankList('rankExternal',topN(ev.filter(e=>(e.Activity||e.OperationName)==='ConnectFromExternalApplication'),e=>getCleanAppName(e)||'Unknown app',10),'#00ff9f');
 }
 
 function opBadge(op){
-  op=op||'';
+  op=String(op||'');
   if(op==='ViewReport')                    return `<span class="badge b-view">View</span>`;
   if(op==='RefreshDataset')                return `<span class="badge b-refresh">Refresh</span>`;
   if(op.toLowerCase().includes('export'))  return `<span class="badge b-export">Export</span>`;
@@ -1526,7 +1575,13 @@ function renderTable(ev){
   const source = ev.length > MAX_EVENTS_FOR_TABLE ? ev.slice(-MAX_EVENTS_FOR_TABLE) : ev;
   const sorted=[...source].sort((a,b)=>{
     let va=a[_sortCol]||'',vb=b[_sortCol]||'';
-    if(_sortCol==='CreationTime'){va=new Date(va);vb=new Date(vb);}
+    if(_sortCol === 'IsSuccess') {
+      va = isSuccess(a) ? 1 : 0;
+      vb = isSuccess(b) ? 1 : 0;
+    } else if(_sortCol === 'App') {
+      va = getCleanAppName(a);
+      vb = getCleanAppName(b);
+    } else if(_sortCol==='CreationTime'){va=new Date(va);vb=new Date(vb);}
     if(va<vb) return _sortAsc?-1:1;
     if(va>vb) return _sortAsc?1:-1;
     return 0;
@@ -1542,42 +1597,51 @@ function renderTable(ev){
       <th onclick="sortBy('domain')">Domain${sa('domain')}</th>
       <th onclick="sortBy('ReportName')">Item${sa('ReportName')}</th>
       <th onclick="sortBy('WorkSpaceName')">Workspace${sa('WorkSpaceName')}</th>
+      <th onclick="sortBy('App')">App${sa('App')}</th>
       <th onclick="sortBy('ConsumptionMethod')">Method${sa('ConsumptionMethod')}</th>
       <th onclick="sortBy('ClientIP')">IP${sa('ClientIP')}</th>
       <th onclick="sortBy('IsSuccess')">Status${sa('IsSuccess')}</th>
     </tr></thead>
     <tbody>${sorted.slice(0,500).map((e, idx)=>{
-      const ts  =e.CreationTime?fmtDateTime(e.CreationTime):'—';
-      const op  =e.Activity||e.OperationName||'—';
-      const user=e.UserId||e.UserName||'—';
-      const item=e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||'—';
-      const ws  =e.WorkSpaceName||e.WorkspaceName||'—';
-      const met =e.ConsumptionMethod||(e.UserAgent?.includes('MSOLAP')?'Desktop':e.UserAgent?.includes('AzureClient')?'Azure Client':'—');
-      const ip  =e.ClientIP||'—';
-      const ok  =e.IsSuccess!==false;
+      try {
+        const ts  =e.CreationTime?fmtDateTime(e.CreationTime):'—';
+        const op  =String(e.Activity||e.OperationName||'—');
+        const user=e.UserId||e.UserName||'—';
+        const item=e.ReportName||e.DatasetName||e.ArtifactName||e.ObjectDisplayName||e.ItemName||'—';
+        const ws  =e.WorkSpaceName||e.WorkspaceName||'—';
+        const appName = getCleanAppName(e) || '—';
+        const ua  =String(e.UserAgent||'');
+        const met =e.ConsumptionMethod||(ua.includes('MSOLAP')?'Desktop':ua.includes('AzureClient')?'Azure Client':'—');
+        const ip  =e.ClientIP||'—';
+        const ok  =isSuccess(e);
 
-      const wsId = e.WorkspaceId || e.WorkSpaceId;
-      const itemId = e.ReportId || e.DatasetId || e.DashboardId || e.DataflowId || e.ArtifactId || e.ObjectId;
-      let itemType = '';
-      if(e.ReportId || op.includes('Report')) itemType = 'report';
-      else if(e.DatasetId || op.includes('Dataset')) itemType = 'dataset';
-      else if(e.DashboardId || op.includes('Dashboard')) itemType = 'dashboard';
-      else if(e.DataflowId || op.includes('Dataflow')) itemType = 'dataflow';
+        const wsId = e.WorkspaceId || e.WorkSpaceId;
+        const itemId = e.ReportId || e.DatasetId || e.DashboardId || e.DataflowId || e.ArtifactId || e.ObjectId;
+        let itemType = '';
+        if(e.ReportId || op.includes('Report')) itemType = 'report';
+        else if(e.DatasetId || op.includes('Dataset')) itemType = 'dataset';
+        else if(e.DashboardId || op.includes('Dashboard')) itemType = 'dashboard';
+        else if(e.DataflowId || op.includes('Dataflow')) itemType = 'dataflow';
 
-      const wsLink = linkItem(ws, wsId, null, null);
-      const itemLink = linkItem(item, wsId, itemId, itemType);
+        const wsLink = linkItem(ws, wsId, null, null);
+        const itemLink = linkItem(item, wsId, itemId, itemType);
 
-      return `<tr>
-        <td style="font-size:10px">${ts}</td>
-        <td style="cursor:pointer;" onclick="showEventJson(${idx})" title="Click to view JSON">${opBadge(op)}</td>
-        <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${user}</td>
-        <td style="font-size:10px;color:var(--dim)">${e.domain||'—'}</td>
-        <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${item}">${itemLink}</td>
-        <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${wsLink}</td>
-        <td style="font-size:10px;color:var(--dim)">${met}</td>
-        <td style="font-size:10px;color:var(--dim)">${ip}</td>
-        <td>${ok?'<span style="color:var(--success)">✓</span>':'<span style="color:var(--danger)">✗ Failed</span>'}</td>
-      </tr>`;
+        return `<tr>
+          <td style="font-size:10px">${ts}</td>
+          <td style="cursor:pointer;" onclick="showEventJson(${idx})" title="Click to view JSON">${opBadge(op)}</td>
+          <td style="font-size:10px;color:var(--dim);max-width:160px;overflow:hidden;text-overflow:ellipsis">${user}</td>
+          <td style="font-size:10px;color:var(--dim)">${e.domain||'—'}</td>
+          <td style="font-size:10px;max-width:180px;overflow:hidden;text-overflow:ellipsis" title="${item}">${itemLink}</td>
+          <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis">${wsLink}</td>
+          <td style="font-size:10px;color:var(--dim);max-width:140px;overflow:hidden;text-overflow:ellipsis" title="${appName}">${appName}</td>
+          <td style="font-size:10px;color:var(--dim)">${met}</td>
+          <td style="font-size:10px;color:var(--dim)">${ip}</td>
+          <td>${ok?'<span style="color:var(--success)">✓</span>':'<span style="color:var(--danger)">✗ Failed</span>'}</td>
+        </tr>`;
+      } catch(err) {
+        console.error("Render error on event", e, err);
+        return `<tr><td colspan="9" style="color:red;font-size:10px">Render error: ${err.message}</td></tr>`;
+      }
     }).join('')}</tbody>
   </table>
   ${sorted.length>500?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 500 of ${sorted.length} events${ev.length>source.length?' (limited to last '+source.length+' events)':''}</div>`:''}`;
@@ -1618,7 +1682,7 @@ function onChartClick(dataIndex) {
   openDrill(point);
 }
 
-function openDrill(point) {
+function openDrill(point, keepMode = false) {
   if (!point || point.timepoint == null) return;
   const tp = point.timepoint;
   _drillTp      = tp;
@@ -1630,9 +1694,31 @@ function openDrill(point) {
   if (refEl) refEl.style.display = 'none';
   document.getElementById('drillOverlay').classList.add('open');
   document.body.classList.add('drill-open');
-  // Reset to interactive tab when opening new timepoint
-  _drillMode = 'interactive';
-  switchDrillTab('interactive');
+  
+  if (!keepMode) {
+    _drillMode = 'interactive';
+  }
+  updateNavButtons();
+  switchDrillTab(_drillMode);
+}
+
+function navigateDrillTp(offset) {
+  if (!_capData || !_capData.length || !_drillCapPoint) return;
+  const currentIndex = _capData.indexOf(_drillCapPoint);
+  if (currentIndex === -1) return;
+  const nextIndex = currentIndex + offset;
+  if (nextIndex >= 0 && nextIndex < _capData.length) {
+    openDrill(_capData[nextIndex], true);
+  }
+}
+
+function updateNavButtons() {
+  if (!_capData || !_capData.length || !_drillCapPoint) return;
+  const currentIndex = _capData.indexOf(_drillCapPoint);
+  const btnPrev = document.getElementById('btnPrevTp');
+  const btnNext = document.getElementById('btnNextTp');
+  if(btnPrev) btnPrev.disabled = (currentIndex <= 0);
+  if(btnNext) btnNext.disabled = (currentIndex === -1 || currentIndex >= _capData.length - 1);
 }
 
 function closeDrillPanel() {
