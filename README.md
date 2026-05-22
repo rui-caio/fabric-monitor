@@ -53,7 +53,7 @@ Reads Power BI user activity events from the **Power BI Activity Events Admin AP
 - **Rankings section** — top 15 leaderboards for: most-viewed reports, most-accessed datasets, most-active users, most-active workspaces, external applications (by AppName/UserAgent), and operations with the most failures
 - **Multi-select filters** — filter by **domain**, **operation type**, **workspace**, **item**, and **user** simultaneously; a status toggle filters for successful or failed events only. Filters are applied client-side on cached data; when the dataset is truncated the backend is re-queried with the active filter set to return full results
 - **Sortable detail table** — up to 500 rows displayed, sortable by any column (Time, Domain, Operation, User, Item, Workspace, App, Method, IP, Status); includes operation-type colour badges that, when clicked, open a modal displaying the full JSON payload of the event
-- **Configurable time window** — from the last hour up to the last 30 days; the cache stores data per hour-long chunk so re-loading a previously fetched range is instantaneous. To prevent disk bloat, a garbage collector runs automatically to purge cache files older than 32 days.
+- **Configurable time window** — from the last hour up to the last 30 days; the cache stores data per hour-long chunk (gzip-compressed `.json.gz`) so re-loading a previously fetched range is instantaneous. To prevent disk bloat, a garbage collector runs automatically to purge cache files older than 32 days.
 - **Large dataset handling** — when the event count exceeds 10,000, only the most recent events are sent to the browser; a warning banner explains the truncation and filters trigger a fresh server-side query
 - **Export to Excel** — exports all current activity rows with columns: Time, Domain, Operation, User, Item, Workspace, Method, IP, Status
 
@@ -294,7 +294,7 @@ fabric-monitor/
 │   └── index.html         # Frontend (HTML + CSS + JavaScript + Chart.js)
 │
 ├── .cache/
-│   └── activityevents/    # Hourly activity event cache (auto-created)
+│   └── activityevents/    # Hourly activity event cache — gzip-compressed .json.gz (auto-created)
 │
 ├── .env                   # Local configuration (do NOT commit)
 ├── .env.example           # Configuration template

@@ -1,3 +1,4 @@
+import gzip
 import json
 import math
 import os
@@ -30,10 +31,9 @@ def _cleanup_old_cache(days_to_keep=32):
     cutoff_dt = datetime.now(timezone.utc) - timedelta(days=days_to_keep)
     try:
         for f in os.listdir(_CACHE_DIR):
-            if not f.startswith('activity-') or not f.endswith('.json'):
+            if not f.startswith('activity-') or not f.endswith('.json.gz'):
                 continue
-            # Extract end date part: activity-YYYYMMDDTHHMMSSZ_YYYYMMDDTHHMMSSZ.json
-            parts = f.replace('.json', '').split('_')
+            parts = f.replace('.json.gz', '').split('_')
             if len(parts) == 2:
                 try:
                     end_str = parts[1].replace('Z', '+0000')
@@ -50,7 +50,7 @@ def _cleanup_old_cache(days_to_keep=32):
 def _cache_path(start_dt, end_dt):
     return os.path.join(
         _CACHE_DIR,
-        f"activity-{start_dt.strftime('%Y%m%dT%H%M%SZ')}_{end_dt.strftime('%Y%m%dT%H%M%SZ')}.json"
+        f"activity-{start_dt.strftime('%Y%m%dT%H%M%SZ')}_{end_dt.strftime('%Y%m%dT%H%M%SZ')}.json.gz"
     )
 
 
@@ -59,7 +59,7 @@ def _load_chunk(start_dt, end_dt):
     if not os.path.exists(path):
         return None
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with gzip.open(path, 'rt', encoding='utf-8') as f:
             return json.load(f)
     except Exception:
         try:
@@ -71,7 +71,7 @@ def _load_chunk(start_dt, end_dt):
 
 def _save_chunk(start_dt, end_dt, events):
     path = _cache_path(start_dt, end_dt)
-    with open(path, 'w', encoding='utf-8') as f:
+    with gzip.open(path, 'wt', encoding='utf-8') as f:
         json.dump(events, f, ensure_ascii=False)
 
 
