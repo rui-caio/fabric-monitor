@@ -10,6 +10,12 @@ from api.capacity  import handle_capacity
 from api.timepoint import handle_timepoint
 from api.refreshes import handle_refreshes
 from api.inventory import handle_inventory
+from api.access import (
+    handle_access_catalog,
+    handle_dataset_users,
+    handle_workspace_users,
+    handle_user_artifacts,
+)
 
 _auth_thread = None
 _auth_thread_lock = threading.Lock()
@@ -70,6 +76,10 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/timepoint":   self.send_json(200, handle_timepoint(payload))
             elif self.path == "/api/refreshes":   self.send_json(200, handle_refreshes(payload))
             elif self.path == "/api/inventory":   self.send_json(200, handle_inventory(payload))
+            elif self.path == "/api/access/catalog":       self.send_json(200, handle_access_catalog(payload))
+            elif self.path == "/api/access/dataset_users":  self.send_json(200, handle_dataset_users(payload))
+            elif self.path == "/api/access/workspace_users": self.send_json(200, handle_workspace_users(payload))
+            elif self.path == "/api/access/user_artifacts": self.send_json(200, handle_user_artifacts(payload))
             elif self.path == "/api/domain_status":
                 from api.domains import get_domain_status
                 self.send_json(200, get_domain_status())

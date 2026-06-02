@@ -51,7 +51,7 @@ Reads Power BI user activity events from the **Power BI Activity Events Admin AP
 - **Artifact Type chart** — distribution of operations by ArtifactKind or ObjectType (Report, Dashboard, Dataset, Dataflow, etc.)
 - **Operation Type chart** — top 12 operation types by frequency, covering the full range of Power BI activity event names
 - **Rankings section** — top 15 leaderboards for: most-viewed reports, most-accessed datasets, most-active users, most-active workspaces, external applications (by AppName/UserAgent), and operations with the most failures
-- **Multi-select filters** — filter by **domain**, **operation type**, **workspace**, **item**, and **user** simultaneously; a status toggle filters for successful or failed events only. Filters are applied client-side on cached data; when the dataset is truncated the backend is re-queried with the active filter set to return full results
+- **Multi-select filters** — filter by **domain**, **operation type**, **workspace**, **item**, **user**, and **shared with** (recipient email from `SharingInformation`, e.g. sharing and export events) simultaneously; a status toggle filters for successful or failed events only. Filters are applied client-side on cached data; when the dataset is truncated the backend is re-queried with the active filter set to return full results
 - **Sortable detail table** — up to 500 rows displayed, sortable by any column (Time, Domain, Operation, User, Item, Workspace, App, Method, IP, Status); includes operation-type colour badges that, when clicked, open a modal displaying the full JSON payload of the event
 - **Configurable time window** — from the last hour up to the last 30 days; the cache stores data per hour-long chunk (gzip-compressed `.json.gz`) so re-loading a previously fetched range is instantaneous. To prevent disk bloat, a garbage collector runs automatically to purge cache files older than 32 days.
 - **Large dataset handling** — when the event count exceeds 10,000, only the most recent events are sent to the browser; a warning banner explains the truncation and filters trigger a fresh server-side query
@@ -85,6 +85,21 @@ Lists artefacts in **workspaces assigned to the configured capacity** (`CAPACITY
 - **UI** — filters (Domain, Workspace, Type, name search), counts by type, sortable table (including Domain mapping), Excel export.
 
 Microsoft documents **strict rate limits** on Admin list APIs (for example, low requests per minute per tenant). Very large tenants may still hit 429; retry later or rely on caching if you add it later.
+
+---
+
+### Access Explorer Tab
+
+Explores **explicit Power BI permissions** for workspaces and artefacts on the configured capacity — who has access to which dataset, workspace role, or user → item mapping. This is not the Activity Log (usage) and does not include RLS/OLS inside semantic models.
+
+- **By dataset** — lists principals and `datasetUserAccessRight` for a selected dataset (`GET /admin/datasets/{id}/users`)
+- **By user** — lists datasets/reports/dashboards/dataflows the user can access **tenant-wide** (`GET /admin/users/{id}/artifactAccess`); includes an **On capacity** column for items on the configured `CAPACITY_ID`
+- **By workspace** — lists workspace members and roles (`GET /admin/groups/{id}/users` as admin, or `/groups/{id}/users` in non-admin mode)
+- **Catalog** — workspaces and datasets on the capacity for pickers (cached 24h under `.cache/access/`)
+- **Rate limits** — permission Admin APIs are limited (~200 calls/hour per endpoint); use **Refresh API** only when you need live data; otherwise results are served from cache
+- **Export to Excel** on each view
+
+Requires the same **Fabric / Power BI Administrator** access and `Tenant.Read.All` (or equivalent) as other Admin features.
 
 ---
 
@@ -317,6 +332,10 @@ The server exposes the following endpoints at `http://localhost:8765`:
 | `POST` | `/api/timepoint` | Operation detail for a specific timepoint |
 | `POST` | `/api/refreshes` | Dataset refresh metrics and schedules |
 | `POST` | `/api/inventory` | Artefact inventory for workspaces on the configured capacity |
+| `POST` | `/api/access/catalog` | Workspaces and datasets on the capacity (for Access Explorer pickers) |
+| `POST` | `/api/access/dataset_users` | Principals with access to a dataset (`datasetId`, optional `refresh`) |
+| `POST` | `/api/access/workspace_users` | Members of a workspace (`workspaceId`, optional `refresh`) |
+| `POST` | `/api/access/user_artifacts` | Items a user can access (`userId`, `artifactTypes`, optional `refresh`) |
 
 ---
 
@@ -328,6 +347,7 @@ The server exposes the following endpoints at `http://localhost:8765`:
 | [Power BI Capacity Refreshables API](https://learn.microsoft.com/rest/api/power-bi/capacities/get-refreshables-for-capacity) | Dataset refresh metrics and schedules |
 | [Power BI Execute Queries API](https://learn.microsoft.com/en-us/rest/api/power-bi/datasets/execute-queries-in-group) | DAX queries against the Capacity Metrics dataset |
 | [Power BI Admin — Groups](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/groups-get-groups-as-admin), [Reports/Datasets/Dashboards/Dataflows as Admin](https://learn.microsoft.com/en-us/rest/api/power-bi/admin) | Inventory: workspaces on capacity + tenant-wide artefact lists (filtered server-side) |
+| [GetDatasetUsersAsAdmin](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/datasets-get-dataset-users-as-admin), [GetGroupUsersAsAdmin](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/groups-get-group-users-as-admin), [GetUserArtifactAccessAsAdmin](https://learn.microsoft.com/en-us/rest/api/power-bi/admin/users-get-user-artifact-access-as-admin) | Access Explorer: dataset / workspace / user permission views |
 
 Optional: [Microsoft Fabric REST — List Items](https://learn.microsoft.com/en-us/rest/api/fabric/core/items/list-items) with a user token (delegated `Workspace.Read.All` in cache) or, for applications, the corresponding Fabric **application** permissions and `https://api.fabric.microsoft.com/.default`.
 

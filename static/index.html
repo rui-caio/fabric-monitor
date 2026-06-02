@@ -235,6 +235,7 @@
     <button class="tab" onclick="switchTab('activity')">📋 Activity Log</button>
     <button class="tab" onclick="switchTab('refreshes')">🔄 Refreshes</button>
     <button class="tab" onclick="switchTab('inventory')">📦 Inventory</button>
+    <button class="tab" onclick="switchTab('access')">🔐 Access Explorer</button>
   </div>
 
   <!-- ══════════════════════════════════════════════════════ -->
@@ -343,6 +344,7 @@
       <div class="fg"><label>Item</label><div class="ms-wrap" id="ms-fItem"></div></div>
       <div class="fg"><label>User</label><div class="ms-wrap" id="ms-fUser"></div></div>
       <div class="fg"><label>External App</label><div class="ms-wrap" id="ms-fApp"></div></div>
+      <div class="fg"><label>Shared with</label><div class="ms-wrap" id="ms-fRecipient"></div></div>
       <div class="fg">
         <label>Status</label>
         <select id="fStatus" onchange="applyFilters()">
@@ -615,6 +617,119 @@
 
 </div><!-- /page-inventory -->
 
+<!-- ══════════════════════════════════════════════════════ -->
+<!--  TAB: ACCESS EXPLORER                                  -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="page" id="page-access">
+
+  <div class="banner info" style="margin-bottom:12px">
+    <span>Explicit Power BI permissions on this capacity — not RLS, not Activity Log usage. Admin APIs are rate-limited (~200 calls/hour per endpoint); results are cached 24h.</span>
+  </div>
+
+  <div class="drill-tabs" style="margin-bottom:14px;border-radius:8px;border:1px solid var(--border)">
+    <button class="drill-tab active" id="accMode-dataset" onclick="switchAccessMode('dataset')">📊 By dataset</button>
+    <button class="drill-tab" id="accMode-user" onclick="switchAccessMode('user')">👤 By user</button>
+    <button class="drill-tab" id="accMode-workspace" onclick="switchAccessMode('workspace')">📁 By workspace</button>
+  </div>
+
+  <div class="toolbar">
+    <div class="fg">
+      <label>&nbsp;</label>
+      <button class="btn btn-p" id="btnAccCatalog" onclick="loadAccessCatalog()">↻ Load catalog</button>
+    </div>
+    <div class="data-info" id="accCatalogInfo" style="display:none">
+      <strong id="accWsCount">0</strong> workspaces · <strong id="accDsCount">0</strong> datasets · <span id="accCatalogTime"></span>
+    </div>
+  </div>
+
+  <div class="banner warn" id="accWarn" style="display:none"></div>
+
+  <!-- By dataset -->
+  <div id="access-panel-dataset">
+    <div class="toolbar">
+      <div class="fg"><label>Workspace</label>
+        <select id="accDsWs" onchange="accOnDatasetWsChange()" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;min-width:200px">
+          <option value="">— load catalog —</option>
+        </select>
+      </div>
+      <div class="fg"><label>Dataset</label>
+        <select id="accDsPick" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;min-width:220px">
+          <option value="">— select workspace —</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>&nbsp;</label>
+        <button class="btn btn-p" id="btnAccDsUsers" onclick="loadDatasetUsers(false)">List access</button>
+        <button class="btn btn-s" onclick="loadDatasetUsers(true)" title="Bypass 24h cache">↻ Refresh API</button>
+      </div>
+    </div>
+    <div class="sec">Dataset principals</div>
+    <div class="tc">
+      <div class="th2" style="align-items:center;gap:10px">
+        <div class="tt" id="accDsTitle">Select a dataset</div>
+        <button class="btn btn-s" onclick="exportAccessDatasetExcel()">📄 Excel</button>
+        <div class="tn" id="accDsTcount"></div>
+      </div>
+      <div class="table-scroll" id="accDsTbl" style="max-height:440px"><div class="empty">Load catalog, pick a dataset, then List access</div></div>
+    </div>
+  </div>
+
+  <!-- By user -->
+  <div id="access-panel-user" style="display:none">
+    <div class="toolbar">
+      <div class="fg" style="min-width:280px">
+        <label>User (UPN or object id)</label>
+        <input type="text" id="accUserId" list="accUserSuggestions" placeholder="user@company.com"
+          style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;width:100%;box-sizing:border-box"/>
+        <datalist id="accUserSuggestions"></datalist>
+      </div>
+      <div class="fg"><label>Artifact types</label>
+        <div class="ms-wrap" id="ms-accTypes"></div>
+      </div>
+      <div class="fg">
+        <label>&nbsp;</label>
+        <button class="btn btn-p" id="btnAccUser" onclick="loadUserArtifacts(false)">List access</button>
+        <button class="btn btn-s" onclick="loadUserArtifacts(true)">↻ Refresh API</button>
+      </div>
+    </div>
+    <div class="sec">All items in tenant (admin view)</div>
+    <div class="tc">
+      <div class="th2" style="align-items:center;gap:10px">
+        <div class="tt" id="accUserTitle">Enter a user</div>
+        <button class="btn btn-s" onclick="exportAccessUserExcel()">📄 Excel</button>
+        <div class="tn" id="accUserTcount"></div>
+      </div>
+      <div class="table-scroll" id="accUserTbl" style="max-height:440px"><div class="empty">Enter UPN or Azure AD object id</div></div>
+    </div>
+  </div>
+
+  <!-- By workspace -->
+  <div id="access-panel-workspace" style="display:none">
+    <div class="toolbar">
+      <div class="fg"><label>Workspace</label>
+        <select id="accWsPick" style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:6px 9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;min-width:260px">
+          <option value="">— load catalog —</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>&nbsp;</label>
+        <button class="btn btn-p" id="btnAccWsUsers" onclick="loadWorkspaceUsers(false)">List members</button>
+        <button class="btn btn-s" onclick="loadWorkspaceUsers(true)">↻ Refresh API</button>
+      </div>
+    </div>
+    <div class="sec">Workspace members</div>
+    <div class="tc">
+      <div class="th2" style="align-items:center;gap:10px">
+        <div class="tt" id="accWsTitle">Select a workspace</div>
+        <button class="btn btn-s" onclick="exportAccessWorkspaceExcel()">📄 Excel</button>
+        <div class="tn" id="accWsTcount"></div>
+      </div>
+      <div class="table-scroll" id="accWsTbl" style="max-height:440px"><div class="empty">Load catalog, pick a workspace, then List members</div></div>
+    </div>
+  </div>
+
+</div><!-- /page-access -->
+
 <!-- Drill-down panel -->
 <div class="drill-overlay" id="drillOverlay" onclick="closeDrill(event)">
   <div class="drill-panel" onclick="event.stopPropagation()">
@@ -752,12 +867,17 @@ let _allEvents=[],_rawActivityEvents=[],_activityFilterOptions=null,_activitySum
 let _currentActivityRows=[];
 let _currentRefRows=[];
 let _invAll=[],_currentInvRows=[],_invSortCol='workspaceName',_invSortAsc=true;
+let _accCatalog={workspaces:[],datasets:[]},_accMode='dataset';
+let _accDsUsers=[],_accWsUsers=[],_accUserEntries=[];
+let _accDsSortCol='displayName',_accDsSortAsc=true,_accWsSortCol='displayName',_accWsSortAsc=true;
+let _accUserSortCol='artifactName',_accUserSortAsc=true;
+const _accTypeOptions=['Dataset','Report','Dashboard','Dataflow'];
 let _activityStart=null,_activityEnd=null,_activityIsTruncated=false,_activityFilterKey='';
 let _sortCol='CreationTime',_sortAsc=false;
 
 // ── Tabs ──────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  const ids=['capacity','activity','refreshes','inventory'];
+  const ids=['capacity','activity','refreshes','inventory','access'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active', ids[i]===tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+tab).classList.add('active');
@@ -1038,6 +1158,7 @@ async function doRefresh(){
     document.getElementById('dataCount').textContent=totalCount.toLocaleString();
     document.getElementById('dataTime').textContent=`at ${fmtAtClock()}`;
     applyFilters();
+    refreshAccUserSuggestions();
   }catch(e){
     console.error(e);
     alert('Error: '+e.message);
@@ -1115,7 +1236,7 @@ function toggleMs(id,v){
   }
   if(_refMsIds.has(id)) applyRefFilters();
   else if(_invMsIds.has(id)) applyInvFilters();
-  else applyFilters();
+  else if(id!=='accTypes') applyFilters();
 }
 
 function selectAll(id){
@@ -1134,7 +1255,7 @@ function selectAll(id){
   }
   if(_refMsIds.has(id)) applyRefFilters();
   else if(_invMsIds.has(id)) applyInvFilters();
-  else applyFilters();
+  else if(id!=='accTypes') applyFilters();
 }
 
 function clearMs(id){
@@ -1187,8 +1308,9 @@ function getActivityFilters(){
   const item=[...(_msState['fItem']||new Set())];
   const user=[...(_msState['fUser']||new Set())];
   const app=[...(_msState['fApp']||new Set())];
+  const recipient=[...(_msState['fRecipient']||new Set())];
   const status=document.getElementById('fStatus').value;
-  return {type,dom,ws,item,user,app,status};
+  return {type,dom,ws,item,user,app,recipient,status};
 }
 
 function hasActiveActivityFilters(filters){
@@ -1234,14 +1356,16 @@ async function fetchActivityFilteredEvents(filters){
 }
 
 function renderCurrentActivity(){
-  renderKPIs(_allEvents);
-  renderTimeChart(_allEvents);
-  renderHourChart(_allEvents);
-  renderMethodChart(_allEvents);
-  renderArtifactChart(_allEvents);
-  renderOperationChart(_allEvents);
-  renderRankings(_allEvents);
-  renderTable(_allEvents);
+  const selRecipient=_msState['fRecipient']||new Set();
+  const events=selRecipient.size===0?_allEvents:_allEvents.filter(e=>{const recips=(e.SharingInformation||[]).map(s=>s.RecipientEmail||'').filter(Boolean);return recips.some(r=>selRecipient.has(r));});
+  renderKPIs(events);
+  renderTimeChart(events);
+  renderHourChart(events);
+  renderMethodChart(events);
+  renderArtifactChart(events);
+  renderOperationChart(events);
+  renderRankings(events);
+  renderTable(events);
 }
 
 function toggleDropdown(id){
@@ -1310,12 +1434,14 @@ function populateFilters(){
   const items = _activityFilterOptions?.item || [...new Set(_allEvents.map(activityItemLabel).filter(Boolean))].sort();
   const users = _activityFilterOptions?.user || [...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
   const apps = _activityFilterOptions?.app || [...new Set(_allEvents.map(getCleanAppName).filter(Boolean))].sort();
+  const recipients = [...new Set(_allEvents.flatMap(e=>(e.SharingInformation||[]).map(s=>s.RecipientEmail||'').filter(Boolean)))].sort();
   buildMultiSelect('ms-fType',ops);
   buildMultiSelect('ms-fDomain',doms);
   buildMultiSelect('ms-fWs',wss);
   buildMultiSelect('ms-fItem',items);
   buildMultiSelect('ms-fUser',users);
   buildMultiSelect('ms-fApp',apps);
+  buildMultiSelect('ms-fRecipient',recipients);
 }
 
 function applyFilters(){
@@ -1343,6 +1469,7 @@ function applyFilters(){
   const selItem=new Set(filters.item);
   const selUser=new Set(filters.user);
   const selApp=new Set(filters.app);
+  const selRecipient=new Set(filters.recipient);
   const fStatus=filters.status;
   const filtered=_allEvents.filter(e=>{
     const op  =e.Activity||e.OperationName||'';
@@ -1358,6 +1485,7 @@ function applyFilters(){
     if(selItem.size>0&&!selItem.has(it)) return false;
     if(selUser.size>0&&!selUser.has(user))return false;
     if(selApp.size>0 &&!selApp.has(app)) return false;
+    if(selRecipient.size>0){const recips=(e.SharingInformation||[]).map(s=>s.RecipientEmail||'').filter(Boolean);if(!recips.some(r=>selRecipient.has(r)))return false;}
     if(fStatus==='ok'  &&!ok) return false;
     if(fStatus==='fail'&& ok) return false;
     return true;
@@ -1368,7 +1496,7 @@ function applyFilters(){
 }
 
 function clearFilters(){
-  ['fType','fDomain','fWs','fItem','fUser','fApp'].forEach(id=>clearMs(id));
+  ['fType','fDomain','fWs','fItem','fUser','fApp','fRecipient'].forEach(id=>clearMs(id));
   document.getElementById('fStatus').value='';
   applyFilters();
 }
@@ -2531,9 +2659,310 @@ function exportDrillToExcel(){
   ]);
 }
 
+// ── ACCESS EXPLORER ───────────────────────────────────────────────────
+function switchAccessMode(mode){
+  _accMode=mode;
+  ['dataset','user','workspace'].forEach(m=>{
+    document.getElementById('accMode-'+m).classList.toggle('active',m===mode);
+    document.getElementById('access-panel-'+m).style.display=m===mode?'block':'none';
+  });
+}
+
+function accEscape(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+}
+
+function accRightBadge(right){
+  const r=String(right||'None');
+  const cls=r==='Admin'?'b-fail':(r.includes('Write')?'b-refresh':(r.includes('Explore')||r==='Member'||r==='Contributor'?'b-view':'b-ext'));
+  return `<span class="badge ${cls}">${accEscape(r)}</span>`;
+}
+
+function refreshAccUserSuggestions(){
+  const dl=document.getElementById('accUserSuggestions');
+  if(!dl) return;
+  const users=[...new Set(_allEvents.map(e=>e.UserId||e.UserName||'').filter(Boolean))].sort();
+  dl.innerHTML=users.slice(0,500).map(u=>`<option value="${accEscape(u)}">`).join('');
+}
+
+async function loadAccessCatalog(){
+  const btn=document.getElementById('btnAccCatalog');
+  const warnEl=document.getElementById('accWarn');
+  warnEl.style.display='none';
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
+  try{
+    const data=await api('/api/access/catalog',{});
+    _accCatalog={workspaces:data.workspaces||[],datasets:data.datasets||[]};
+    document.getElementById('accCatalogInfo').style.display='flex';
+    document.getElementById('accWsCount').textContent=(_accCatalog.workspaces.length).toLocaleString();
+    document.getElementById('accDsCount').textContent=(_accCatalog.datasets.length).toLocaleString();
+    const cacheNote=data.fromCache?' (cached)':'';
+    document.getElementById('accCatalogTime').textContent=fmtDateTime(new Date())+cacheNote;
+    accPopulateWorkspaceSelects();
+    if(!_msState.accTypes||!_msState.accTypes.size){
+      buildMultiSelect('ms-accTypes',_accTypeOptions);
+      _accTypeOptions.forEach(t=>_msState.accTypes.add(t));
+      updateMsLabel('accTypes');
+    }
+    refreshAccUserSuggestions();
+  }catch(e){
+    warnEl.style.display='flex';
+    warnEl.innerHTML='<span>⚠ '+accEscape(e.message)+'</span>';
+  }
+  btn.disabled=false;btn.innerHTML='↻ Load catalog';
+}
+
+function accPopulateWorkspaceSelects(){
+  const wss=_accCatalog.workspaces||[];
+  const wsSel=document.getElementById('accDsWs');
+  const wsPick=document.getElementById('accWsPick');
+  const fill=(el,placeholder)=>{
+    const cur=el.value;
+    el.innerHTML=`<option value="">${placeholder}</option>`+
+      wss.map(w=>`<option value="${accEscape(w.id)}">${accEscape(w.name||w.id)}</option>`).join('');
+    if(cur) el.value=cur;
+  };
+  fill(wsSel,'— select workspace —');
+  fill(wsPick,'— select workspace —');
+  accOnDatasetWsChange();
+}
+
+function accOnDatasetWsChange(){
+  const wsId=document.getElementById('accDsWs').value;
+  const dsSel=document.getElementById('accDsPick');
+  const dss=(_accCatalog.datasets||[]).filter(d=>!wsId||String(d.workspaceId)===wsId);
+  const cur=dsSel.value;
+  dsSel.innerHTML=`<option value="">${wsId?'— select dataset —':'— select workspace —'}</option>`+
+    dss.map(d=>`<option value="${accEscape(d.id)}">${accEscape(d.name||d.id)}</option>`).join('');
+  if(cur&&dss.some(d=>d.id===cur)) dsSel.value=cur;
+}
+
+async function loadDatasetUsers(refresh){
+  const datasetId=document.getElementById('accDsPick').value;
+  if(!datasetId){alert('Select a dataset first.');return;}
+  const btn=document.getElementById('btnAccDsUsers');
+  const warnEl=document.getElementById('accWarn');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
+  warnEl.style.display='none';
+  try{
+    const data=await api('/api/access/dataset_users',{datasetId,refresh:!!refresh});
+    _accDsUsers=data.users||[];
+    const ds=(_accCatalog.datasets||[]).find(d=>d.id===datasetId);
+    const title=ds?(ds.name+' · '+ds.workspaceName):datasetId;
+    document.getElementById('accDsTitle').textContent=title+(data.fromCache?' (cached)':'');
+    if(data.fromCache){
+      warnEl.style.display='flex';
+      warnEl.innerHTML='<span>ℹ Cached result (24h). Use Refresh API for live data.</span>';
+    }
+    renderAccDsTable();
+  }catch(e){
+    alert('Error: '+e.message);
+  }
+  btn.disabled=false;btn.innerHTML='List access';
+}
+
+function renderAccDsTable(){
+  const sorted=[..._accDsUsers].sort((a,b)=>{
+    let va=a[_accDsSortCol],vb=b[_accDsSortCol];
+    if(va==null) va=''; if(vb==null) vb='';
+    va=String(va).toLowerCase(); vb=String(vb).toLowerCase();
+    if(va<vb) return _accDsSortAsc?-1:1;
+    if(va>vb) return _accDsSortAsc?1:-1;
+    return 0;
+  });
+  const tbl=document.getElementById('accDsTbl');
+  if(!sorted.length){tbl.innerHTML='<div class="empty">No principals returned for this dataset</div>';document.getElementById('accDsTcount').textContent='';return;}
+  const sa=col=>col===_accDsSortCol?(_accDsSortAsc?' ↑':' ↓'):'';
+  tbl.innerHTML=`<table><thead><tr>
+    <th onclick="accDsSortBy('displayName')">Name${sa('displayName')}</th>
+    <th onclick="accDsSortBy('emailAddress')">Email${sa('emailAddress')}</th>
+    <th onclick="accDsSortBy('principalType')">Type${sa('principalType')}</th>
+    <th onclick="accDsSortBy('accessRight')">Dataset right${sa('accessRight')}</th>
+    <th onclick="accDsSortBy('identifier')">Identifier${sa('identifier')}</th>
+  </tr></thead><tbody>${sorted.map(r=>`<tr>
+    <td>${accEscape(r.displayName||'—')}</td>
+    <td style="font-size:10px">${accEscape(r.emailAddress||r.identifier||'—')}</td>
+    <td><span class="badge b-ext">${accEscape(r.principalType||'')}</span></td>
+    <td>${accRightBadge(r.accessRight)}</td>
+    <td style="font-size:9px;color:var(--dim)">${accEscape(r.identifier||'')}</td>
+  </tr>`).join('')}</tbody></table>`;
+  document.getElementById('accDsTcount').textContent=sorted.length+' principals';
+}
+
+function accDsSortBy(col){
+  if(_accDsSortCol===col) _accDsSortAsc=!_accDsSortAsc;
+  else{_accDsSortCol=col;_accDsSortAsc=true;}
+  renderAccDsTable();
+}
+
+async function loadWorkspaceUsers(refresh){
+  const workspaceId=document.getElementById('accWsPick').value;
+  if(!workspaceId){alert('Select a workspace first.');return;}
+  const btn=document.getElementById('btnAccWsUsers');
+  const warnEl=document.getElementById('accWarn');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
+  warnEl.style.display='none';
+  try{
+    const data=await api('/api/access/workspace_users',{workspaceId,refresh:!!refresh});
+    _accWsUsers=data.users||[];
+    const wn=data.workspaceName||((_accCatalog.workspaces||[]).find(w=>w.id===workspaceId)||{}).name||workspaceId;
+    document.getElementById('accWsTitle').textContent=wn+(data.fromCache?' (cached)':'');
+    if(data.fromCache){
+      warnEl.style.display='flex';
+      warnEl.innerHTML='<span>ℹ Cached result (24h). Use Refresh API for live data.</span>';
+    }
+    renderAccWsTable();
+  }catch(e){
+    alert('Error: '+e.message);
+  }
+  btn.disabled=false;btn.innerHTML='List members';
+}
+
+function renderAccWsTable(){
+  const sorted=[..._accWsUsers].sort((a,b)=>{
+    let va=a[_accWsSortCol],vb=b[_accWsSortCol];
+    if(va==null) va=''; if(vb==null) vb='';
+    va=String(va).toLowerCase(); vb=String(vb).toLowerCase();
+    if(va<vb) return _accWsSortAsc?-1:1;
+    if(va>vb) return _accWsSortAsc?1:-1;
+    return 0;
+  });
+  const tbl=document.getElementById('accWsTbl');
+  if(!sorted.length){tbl.innerHTML='<div class="empty">No members returned</div>';document.getElementById('accWsTcount').textContent='';return;}
+  const sa=col=>col===_accWsSortCol?(_accWsSortAsc?' ↑':' ↓'):'';
+  tbl.innerHTML=`<table><thead><tr>
+    <th onclick="accWsSortBy('displayName')">Name${sa('displayName')}</th>
+    <th onclick="accWsSortBy('emailAddress')">Email${sa('emailAddress')}</th>
+    <th onclick="accWsSortBy('principalType')">Type${sa('principalType')}</th>
+    <th onclick="accWsSortBy('accessRight')">Workspace role${sa('accessRight')}</th>
+    <th onclick="accWsSortBy('identifier')">Identifier${sa('identifier')}</th>
+  </tr></thead><tbody>${sorted.map(r=>`<tr>
+    <td>${accEscape(r.displayName||'—')}</td>
+    <td style="font-size:10px">${accEscape(r.emailAddress||r.identifier||'—')}</td>
+    <td><span class="badge b-ext">${accEscape(r.principalType||'')}</span></td>
+    <td>${accRightBadge(r.accessRight)}</td>
+    <td style="font-size:9px;color:var(--dim)">${accEscape(r.identifier||'')}</td>
+  </tr>`).join('')}</tbody></table>`;
+  document.getElementById('accWsTcount').textContent=sorted.length+' members';
+}
+
+function accWsSortBy(col){
+  if(_accWsSortCol===col) _accWsSortAsc=!_accWsSortAsc;
+  else{_accWsSortCol=col;_accWsSortAsc=true;}
+  renderAccWsTable();
+}
+
+async function loadUserArtifacts(refresh){
+  const userId=(document.getElementById('accUserId').value||'').trim();
+  if(!userId){alert('Enter a user UPN or Azure AD object id.');return;}
+  const types=[...(_msState.accTypes||new Set())];
+  if(!types.length){alert('Select at least one artifact type.');return;}
+  const btn=document.getElementById('btnAccUser');
+  const warnEl=document.getElementById('accWarn');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>Loading...';
+  warnEl.style.display='none';
+  try{
+    const data=await api('/api/access/user_artifacts',{userId,artifactTypes:types,refresh:!!refresh});
+    _accUserEntries=data.entries||[];
+    let title=userId;
+    if(data.unresolvedWorkspace>0) title+=` · ${data.unresolvedWorkspace} without workspace name in catalog`;
+    document.getElementById('accUserTitle').textContent=title+(data.fromCache?' (cached)':'');
+    if(data.fromCache){
+      warnEl.style.display='flex';
+      warnEl.innerHTML='<span>ℹ Cached result (24h). Use Refresh API for live data.</span>';
+    } else if(data.unresolvedWorkspace>0){
+      warnEl.style.display='flex';
+      warnEl.innerHTML='<span>ℹ '+data.unresolvedWorkspace+' item(s) could not be matched to a workspace in the tenant catalog (name/id still shown).</span>';
+    }
+    renderAccUserTable();
+  }catch(e){
+    alert('Error: '+e.message);
+  }
+  btn.disabled=false;btn.innerHTML='List access';
+}
+
+function renderAccUserTable(){
+  const sorted=[..._accUserEntries].sort((a,b)=>{
+    let va=a[_accUserSortCol],vb=b[_accUserSortCol];
+    if(va==null) va=''; if(vb==null) vb='';
+    va=String(va).toLowerCase(); vb=String(vb).toLowerCase();
+    if(va<vb) return _accUserSortAsc?-1:1;
+    if(va>vb) return _accUserSortAsc?1:-1;
+    return 0;
+  });
+  const tbl=document.getElementById('accUserTbl');
+  if(!sorted.length){tbl.innerHTML='<div class="empty">No items returned for this user (try more artifact types or Refresh API)</div>';document.getElementById('accUserTcount').textContent='';return;}
+  const sa=col=>col===_accUserSortCol?(_accUserSortAsc?' ↑':' ↓'):'';
+  tbl.innerHTML=`<table><thead><tr>
+    <th onclick="accUserSortBy('artifactType')">Type${sa('artifactType')}</th>
+    <th onclick="accUserSortBy('artifactName')">Name${sa('artifactName')}</th>
+    <th onclick="accUserSortBy('workspaceName')">Workspace${sa('workspaceName')}</th>
+    <th onclick="accUserSortBy('domain')">Domain${sa('domain')}</th>
+    <th onclick="accUserSortBy('accessRight')">Right${sa('accessRight')}</th>
+    <th onclick="accUserSortBy('onConfiguredCapacity')">On capacity${sa('onConfiguredCapacity')}</th>
+    <th onclick="accUserSortBy('artifactId')">Item id${sa('artifactId')}</th>
+  </tr></thead><tbody>${sorted.map(r=>`<tr>
+    <td><span class="badge b-view">${accEscape(r.artifactType||'')}</span></td>
+    <td style="font-size:10px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${accEscape(r.artifactName)}">${linkItem(r.artifactName||'',r.workspaceId,r.artifactId,r.artifactType)}</td>
+    <td style="font-size:10px;color:var(--dim)">${linkItem(r.workspaceName||'',r.workspaceId,null,null)}</td>
+    <td style="font-size:10px;color:var(--dim)">${accEscape(r.domain||'—')}</td>
+    <td>${accRightBadge(r.accessRight)}</td>
+    <td>${r.onConfiguredCapacity?'<span class="badge b-view">Yes</span>':'<span class="badge b-ext">—</span>'}</td>
+    <td style="font-size:9px;color:var(--dim)">${accEscape(r.artifactId||'')}</td>
+  </tr>`).join('')}</tbody></table>`;
+  document.getElementById('accUserTcount').textContent=sorted.length+' items (tenant-wide)';
+}
+
+function accUserSortBy(col){
+  if(_accUserSortCol===col) _accUserSortAsc=!_accUserSortAsc;
+  else{_accUserSortCol=col;_accUserSortAsc=true;}
+  renderAccUserTable();
+}
+
+function exportAccessDatasetExcel(){
+  if(!_accDsUsers.length){alert('No data to export.');return;}
+  exportRowsToExcel('Fabric_Access_Dataset.xls',_accDsUsers,[
+    {label:'Display name',value:r=>r.displayName||''},
+    {label:'Email',value:r=>r.emailAddress||''},
+    {label:'Principal type',value:r=>r.principalType||''},
+    {label:'Dataset access',value:r=>r.accessRight||''},
+    {label:'Identifier',value:r=>r.identifier||''},
+    {label:'Graph id',value:r=>r.graphId||''}
+  ]);
+}
+
+function exportAccessWorkspaceExcel(){
+  if(!_accWsUsers.length){alert('No data to export.');return;}
+  exportRowsToExcel('Fabric_Access_Workspace.xls',_accWsUsers,[
+    {label:'Display name',value:r=>r.displayName||''},
+    {label:'Email',value:r=>r.emailAddress||''},
+    {label:'Principal type',value:r=>r.principalType||''},
+    {label:'Workspace role',value:r=>r.accessRight||''},
+    {label:'Identifier',value:r=>r.identifier||''},
+    {label:'Graph id',value:r=>r.graphId||''}
+  ]);
+}
+
+function exportAccessUserExcel(){
+  if(!_accUserEntries.length){alert('No data to export.');return;}
+  exportRowsToExcel('Fabric_Access_User.xls',_accUserEntries,[
+    {label:'Type',value:r=>r.artifactType||''},
+    {label:'Name',value:r=>r.artifactName||''},
+    {label:'Workspace',value:r=>r.workspaceName||''},
+    {label:'Domain',value:r=>r.domain||''},
+    {label:'Access right',value:r=>r.accessRight||''},
+    {label:'On configured capacity',value:r=>r.onConfiguredCapacity?'Yes':'No'},
+    {label:'Artifact id',value:r=>r.artifactId||''},
+    {label:'Workspace id',value:r=>r.workspaceId||''}
+  ]);
+}
+
 try {
   initCharts();
   initRefCharts();
+  buildMultiSelect('ms-accTypes', _accTypeOptions);
+  _accTypeOptions.forEach(t=>_msState.accTypes.add(t));
+  updateMsLabel('accTypes');
 } catch(e) {
   console.error('Chart initialization failed:', e);
 }
