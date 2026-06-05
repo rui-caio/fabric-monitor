@@ -36,6 +36,7 @@ Visualises compute unit (CU) consumption over time by querying the **Microsoft F
   - **Filter pills** for each dimension — multi-value dropdown filters applied locally without an extra API call
   - Metric summary cards showing total CU (s), Timepoint CU (s), Duration (s), and % Capacity for the current view
   - CU bar chart per row to visualise relative cost at a glance
+  - **Scheduled refresh tooltip** — when the **Operation** dimension is active and a row shows a *Dataset Scheduled Refresh* operation, hovering over the operation cell displays a tooltip with **Ref/day**, **Avg duration**, and **Load/day** pulled from the Refreshes tab data (requires the Refreshes tab to have been loaded in the same session)
   - Export to Excel with all active grouping dimensions and metrics
 
 ---

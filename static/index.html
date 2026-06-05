@@ -183,6 +183,8 @@
   .drill-table td{padding:7px 9px;border-bottom:1px solid rgba(30,45,69,.4);vertical-align:middle;white-space:nowrap}
   .drill-table tr:hover td{background:rgba(0,212,255,.03)}
   .drill-table tr:last-child td{border-bottom:none}
+  .sched-tip{cursor:help;border-bottom:1px dashed currentColor;display:inline-block}
+  #refSchedTip{display:none;position:fixed;background:var(--surface2);border:1px solid var(--border);color:var(--bright);border-radius:6px;padding:8px 11px;font-size:9.5px;font-family:'JetBrains Mono',monospace;white-space:pre;z-index:99999;line-height:1.8;box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none}
   .cu-bar{display:inline-block;height:4px;border-radius:2px;vertical-align:middle;margin-left:6px;opacity:.7}
   .status-ok{color:var(--success)}.status-fail{color:var(--danger)}.status-other{color:var(--dim)}
   .hint-click{font-size:10px;color:var(--dim);text-align:center;padding:6px;font-style:italic}
@@ -2095,6 +2097,19 @@ function renderDrillTable(rows, mode) {
             let val = r[d];
             if (d === 'workspace') val = linkItem(val, r.workspace_id, null, null);
             else if (d === 'item') val = linkItem(val, r.workspace_id, r.item_id, r.item_kind);
+            if (d === 'operation') {
+              if (r.operation === 'Dataset Scheduled Refresh' && _refAll.length) {
+                const ds = _refAll.find(x => x.id === r.item_id)
+                        || _refAll.find(x => x.name === r.item);
+                if (ds) {
+                  const rpd  = ds.refreshes_per_day;
+                  const avg  = ds.average_duration != null ? ds.average_duration.toFixed(2) + 'min' : '—';
+                  const load = ds.daily_load_min   != null ? ds.daily_load_min.toFixed(2)   + 'min' : '—';
+                  const stip = `Ref/day   ${rpd}&#10;Avg dur   ${avg}&#10;Load/day  ${load}`;
+                  val = `<span class="sched-tip" data-stip="${stip}">${val}</span>`;
+                }
+              }
+            }
             return `<td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;${d==='operation'?'color:var(--cu)':d==='user'||d==='workspace'?'color:var(--dim)':''}" title="${String(r[d]||'').replace(/"/g, '&quot;')}">${val}</td>`;
           }).join('')}
           <td>${cuBar(r.total_cu)}</td>
@@ -2999,6 +3014,29 @@ function updateChartsTheme() {
     c.update();
   });
 }
+
+// Sched-tip tooltip (fixed position, avoids overflow:hidden clipping)
+(function(){
+  const tip = document.createElement('div');
+  tip.id = 'refSchedTip';
+  document.body.appendChild(tip);
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest('.sched-tip');
+    if (!el) return;
+    tip.textContent = el.dataset.stip || '';
+    tip.style.display = 'block';
+  });
+  document.addEventListener('mousemove', e => {
+    if (tip.style.display === 'none') return;
+    const x = e.clientX + 14;
+    const y = e.clientY - tip.offsetHeight - 10;
+    tip.style.left = x + 'px';
+    tip.style.top  = (y < 4 ? e.clientY + 14 : y) + 'px';
+  });
+  document.addEventListener('mouseout', e => {
+    if (e.target.closest('.sched-tip')) tip.style.display = 'none';
+  });
+})();
 
 // Initial state
 updateThemeIcons();
