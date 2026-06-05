@@ -1,7 +1,7 @@
 import json
 import os
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from auth import get_app, get_token
 from config import AUTH_TYPE, CLIENT_ID, TENANT_ID, PORT, ORG_NAME, FM_DISPLAY_JS
@@ -10,6 +10,7 @@ from api.capacity  import handle_capacity
 from api.timepoint import handle_timepoint
 from api.refreshes import handle_refreshes
 from api.inventory import handle_inventory
+from api.datasources import handle_datasources
 from api.access import (
     handle_access_catalog,
     handle_dataset_users,
@@ -76,6 +77,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == "/api/timepoint":   self.send_json(200, handle_timepoint(payload))
             elif self.path == "/api/refreshes":   self.send_json(200, handle_refreshes(payload))
             elif self.path == "/api/inventory":   self.send_json(200, handle_inventory(payload))
+            elif self.path == "/api/datasources": self.send_json(200, handle_datasources(payload))
             elif self.path == "/api/access/catalog":       self.send_json(200, handle_access_catalog(payload))
             elif self.path == "/api/access/dataset_users":  self.send_json(200, handle_dataset_users(payload))
             elif self.path == "/api/access/workspace_users": self.send_json(200, handle_workspace_users(payload))
@@ -168,7 +170,7 @@ def main():
     print(f"    Local:   http://localhost:{PORT}")
     print(f"    Network: http://{local_ip}:{PORT}\n")
 
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

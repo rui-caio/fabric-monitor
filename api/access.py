@@ -89,7 +89,8 @@ def _fetch_user_artifact_pages(pbi_token, user_id, types):
         if status != 200:
             raise Exception(_api_error(status, data))
         entries_raw.extend(
-            data.get("artifactAccessEntities")
+            data.get("ArtifactAccessEntities")
+            or data.get("artifactAccessEntities")
             or data.get("artifactAccessEntries")
             or data.get("value")
             or []

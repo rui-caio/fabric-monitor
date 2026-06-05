@@ -41,6 +41,16 @@ Visualises compute unit (CU) consumption over time by querying the **Microsoft F
 
 ---
 
+### Datasource Explorer (Refreshes and Inventory tabs)
+
+Fetches the data sources behind each Power BI dataset using the **Power BI Admin datasources API** (`GET /admin/datasets/{id}/datasources`). Results are cached locally for 24 hours.
+
+- **⊕ Sources button** — available in both the Refreshes and Inventory tabs; triggers a scan of all workspaces on the capacity and resolves datasources for each dataset in parallel (10 concurrent requests)
+- **Sources column** — appears in the Refreshes and Inventory tables showing compact type badges (e.g. `SQL`, `SPO`, `OData`, `ADLS`) for each dataset; hover shows server, database, or URL details
+- **Cache** — results stored in `.cache/datasources/datasources.json.gz`; expires after 24 h; force-refresh with `loadDatasources(true)` in the browser console
+
+---
+
 ### Activity Log Tab
 
 Reads Power BI user activity events from the **Power BI Activity Events Admin API**, with hourly chunking and local disk cache to avoid redundant API calls.
@@ -94,7 +104,7 @@ Microsoft documents **strict rate limits** on Admin list APIs (for example, low 
 Explores **explicit Power BI permissions** for workspaces and artefacts on the configured capacity — who has access to which dataset, workspace role, or user → item mapping. This is not the Activity Log (usage) and does not include RLS/OLS inside semantic models.
 
 - **By dataset** — lists principals and `datasetUserAccessRight` for a selected dataset (`GET /admin/datasets/{id}/users`)
-- **By user** — lists datasets/reports/dashboards/dataflows the user can access **tenant-wide** (`GET /admin/users/{id}/artifactAccess`); includes an **On capacity** column for items on the configured `CAPACITY_ID`
+- **By user** — lists datasets/reports/dashboards/dataflows the user can access **tenant-wide** (`GET /admin/users/{id}/artifactAccess`); supports UPN or Azure AD object ID; includes an **On capacity** column for items on the configured `CAPACITY_ID`; paginated via `continuationUri`/`continuationToken`
 - **By workspace** — lists workspace members and roles (`GET /admin/groups/{id}/users` as admin, or `/groups/{id}/users` in non-admin mode)
 - **Catalog** — workspaces and datasets on the capacity for pickers (cached 24h under `.cache/access/`)
 - **Rate limits** — permission Admin APIs are limited (~200 calls/hour per endpoint); use **Refresh API** only when you need live data; otherwise results are served from cache

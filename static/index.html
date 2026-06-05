@@ -184,6 +184,7 @@
   .drill-table tr:hover td{background:rgba(0,212,255,.03)}
   .drill-table tr:last-child td{border-bottom:none}
   .sched-tip{cursor:help;border-bottom:1px dashed currentColor;display:inline-block}
+  .src-badge{display:inline-block;background:rgba(168,85,247,.12);color:#a855f7;padding:1px 5px;border-radius:3px;font-size:9px;margin:1px 2px 1px 0;cursor:help}
   #refSchedTip{display:none;position:fixed;background:var(--surface2);border:1px solid var(--border);color:var(--bright);border-radius:6px;padding:8px 11px;font-size:9.5px;font-family:'JetBrains Mono',monospace;white-space:pre;z-index:99999;line-height:1.8;box-shadow:0 4px 16px rgba(0,0,0,.5);pointer-events:none}
   .cu-bar{display:inline-block;height:4px;border-radius:2px;vertical-align:middle;margin-left:6px;opacity:.7}
   .status-ok{color:var(--success)}.status-fail{color:var(--danger)}.status-other{color:var(--dim)}
@@ -464,6 +465,7 @@
     <div class="fg">
       <label>&nbsp;</label>
       <button class="btn btn-p" id="btnRef" onclick="loadRefreshes()">↻ Load Refreshes</button>
+      <button class="btn btn-s btn-src" onclick="loadDatasources()" title="Scan datasources via Power BI Scanner API (cached 24h)">⊕ Sources</button>
     </div>
     <div class="fg"><label>Domain</label><div class="ms-wrap" id="ms-rDom"></div></div>
     <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-rWs"></div></div>
@@ -573,6 +575,7 @@
     <div class="fg">
       <label>&nbsp;</label>
       <button class="btn btn-p" id="btnInv" onclick="loadInventory()">↻ Load Inventory</button>
+      <button class="btn btn-s btn-src" onclick="loadDatasources()" title="Scan datasources via Power BI Scanner API (cached 24h)">⊕ Sources</button>
     </div>
     <div class="fg"><label>Domain</label><div class="ms-wrap" id="ms-iDom"></div></div>
     <div class="fg"><label>Workspace</label><div class="ms-wrap" id="ms-iWs"></div></div>
@@ -2123,6 +2126,48 @@ function renderDrillTable(rows, mode) {
 }
 
 
+// ── DATASOURCES ───────────────────────────────────────────────────────
+let _dsources = {};
+
+const _srcLabel = t => ({'Sql':'SQL','AzureSql':'SQL','AzureDataExplorer':'ADX',
+  'SharePoint':'SPO','AzureDataLakeStorage':'ADLS','AzureDataLake':'ADLS',
+  'OData':'OData','Web':'Web','File':'File','Folder':'Folder',
+  'AnalysisServices':'AS','Exchange':'Exchange','Salesforce':'SFDC',
+  'SalesforceReports':'SFDC','Oracle':'Oracle','MySql':'MySQL',
+  'PostgreSql':'PgSQL','Teradata':'Teradata','Snowflake':'Snowflake',
+  'GoogleBigQuery':'BigQuery','AzureBlob':'Blob','Lakehouse':'LH',
+  'Warehouse':'WH','SapHana':'SAP HANA','SapBw':'SAP BW'}[t] || (t||'?').substring(0,8));
+
+function srcBadges(itemId) {
+  const sources = _dsources[(itemId||'').toLowerCase()];
+  if (!sources || !sources.length) return '<span style="color:var(--dim);font-size:10px">—</span>';
+  return sources.map(s => {
+    const detail = [s.server && s.database ? s.server + ' / ' + s.database : s.server, s.url, s.path].filter(Boolean).join('&#10;');
+    const tip = (s.type + (detail ? '&#10;' + detail : '')).replace(/"/g, '&quot;');
+    return `<span class="src-badge sched-tip" data-stip="${tip}">${_srcLabel(s.type)}</span>`;
+  }).join('');
+}
+
+async function loadDatasources(force) {
+  document.querySelectorAll('.btn-src').forEach(b => { b.disabled = true; b.innerHTML = '<span class="spin"></span>Scanning...'; });
+  try {
+    const data = await api('/api/datasources', force ? {refresh: true} : {});
+    _dsources = data.by_dataset || {};
+    const ts = data.scanned_at ? new Date(data.scanned_at).toLocaleDateString() : '';
+    document.querySelectorAll('.btn-src').forEach(b => {
+      b.disabled = false;
+      b.innerHTML = '⊕ Sources ✓';
+      b.style.color = 'var(--success)';
+      b.title = `${data.dataset_count || 0} datasets · ${data.workspace_count || 0} workspaces · ${ts}`;
+    });
+    if (_refAll.length)  applyRefFilters();
+    if (_invAll.length)  applyInvFilters();
+  } catch(e) {
+    document.querySelectorAll('.btn-src').forEach(b => { b.disabled = false; b.innerHTML = '⊕ Sources'; });
+    alert('Datasources error: ' + e.message);
+  }
+}
+
 // ── REFRESHES ─────────────────────────────────────────────────────────
 let _refAll = [];
 let _refSort = 'daily_load_min';
@@ -2351,6 +2396,7 @@ function renderRefTable(data){
       <th onclick="refSortBy('refresh_failures')">Failures${sa('refresh_failures')}</th>
       <th onclick="refSortBy('last_status')">Last Status${sa('last_status')}</th>
       <th onclick="refSortBy('last_end')">Last Refresh${sa('last_end')}</th>
+      <th>Sources</th>
     </tr></thead>
     <tbody>${sorted.slice(0,500).map(r=>`<tr>
       <td style="font-size:10px;color:var(--dim)">${r.domain||'—'}</td>
@@ -2367,6 +2413,7 @@ function renderRefTable(data){
       <td style="font-size:10px;text-align:center;${r.refresh_failures>0?'color:var(--danger)':''}">${r.refresh_failures||0}</td>
       <td>${statusBadge(r.last_status)}</td>
       <td style="font-size:10px;color:var(--dim)">${r.last_end?fmtDateTime(r.last_end):'—'}</td>
+      <td style="white-space:normal;min-width:80px">${srcBadges(r.id)}</td>
     </tr>`).join('')}</tbody>
 
   </table>
@@ -2563,6 +2610,7 @@ function renderInvTable(data){
       <th onclick="invSortBy('domain')">Domain${sa('domain')}</th>
       <th onclick="invSortBy('workspaceName')">Workspace${sa('workspaceName')}</th>
       <th onclick="invSortBy('itemId')">Item Id${sa('itemId')}</th>
+      <th>Sources</th>
     </tr></thead>
     <tbody>${data.slice(0,2000).map(r=>`<tr>
       <td><span class="badge b-view">${invEscape(r.type||'')}</span></td>
@@ -2570,6 +2618,7 @@ function renderInvTable(data){
       <td style="font-size:10px;color:var(--dim)">${invEscape(r.domain||'—')}</td>
       <td style="font-size:10px;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${invEscape(r.workspaceName)}">${linkItem(r.workspaceName||'', r.workspaceId, null, null)}</td>
       <td style="font-size:9px;color:var(--dim)">${invEscape(r.itemId||'')}</td>
+      <td style="white-space:normal;min-width:80px">${r.type==='Dataset'?srcBadges(r.itemId):'<span style="color:var(--dim);font-size:10px">—</span>'}</td>
     </tr>`).join('')}</tbody>
   </table>
   ${data.length>2000?`<div style="text-align:center;padding:8px;font-size:10px;color:var(--dim)">Showing 2000 of ${data.length} — filter or export to Excel</div>`:''}`;
